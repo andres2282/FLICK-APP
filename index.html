@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>$FLICK — Crea. Bombea. A la luna.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   $FLICK — sistema de diseño
+   bg profundo casi negro + lima neón. Firma visual: la "mecha"
+   de la curva de vinculación, que se enciende al graduar.
+   ============================================================ */
+:root{
+  --bg:#06080A;
+  --panel:#0D1114;
+  --panel-2:#141A1E;
+  --line:#1E262B;
+  --lime:#C6FF3D;
+  --lime-2:#8FE000;
+  --red:#FF4D6A;
+  --text:#EAF2EC;
+  --dim:#7C8C86;
+  --nav-h:66px;
+  --display:'Anton',system-ui,sans-serif;
+  --ui:'Space Grotesk',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--text);font-family:var(--ui);
+  font-size:15px;line-height:1.45;
+  padding-bottom:calc(var(--nav-h) + env(safe-area-inset-bottom));
+  overflow-x:hidden;
+}
+body::before{ /* atmósfera: resplandor lima muy tenue arriba */
+  content:'';position:fixed;inset:0 0 auto 0;height:340px;pointer-events:none;z-index:0;
+  background:radial-gradient(120% 100% at 50% 0%, rgba(198,255,61,.10), transparent 70%);
+}
+.app{position:relative;z-index:1;max-width:520px;margin:0 auto}
+button{font-family:inherit;color:inherit;cursor:pointer;border:0;background:none}
+input,textarea,select{font-family:inherit;font-size:15px}
+:focus-visible{outline:2px solid var(--lime);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.up{color:var(--lime)} .down{color:var(--red)}
+.hidden{display:none!important}
+
+/* ---------- header ---------- */
+.hdr{
+  position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:10px;
+  padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
+  background:rgba(6,8,10,.88);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+}
+.hdr .mark{width:30px;height:30px;flex:none}
+.hdr .word{font-family:var(--display);font-size:21px;letter-spacing:.5px}
+.hdr .word b{color:var(--lime);font-weight:400}
+.hdr .sp{flex:1}
+.wbtn{
+  display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;
+  border:1px solid var(--lime);color:var(--lime);font-weight:700;font-size:13px;
+  background:rgba(198,255,61,.07);
+}
+.wbtn.on{border-color:var(--line);color:var(--text);background:var(--panel-2)}
+.wbtn .dot{width:6px;height:6px;border-radius:50%;background:var(--lime)}
+
+/* ---------- barra de estado de cadena ---------- */
+.chainbar{display:flex;align-items:center;gap:8px;padding:10px 14px 0}
+.live{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
+  background:rgba(198,255,61,.10);border:1px solid rgba(198,255,61,.30);
+  font-size:10.5px;font-weight:700;letter-spacing:.14em;color:var(--lime);
+}
+.live i{width:6px;height:6px;border-radius:50%;background:var(--lime);animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+.chainbar .sp{flex:1}
+.mk-token{
+  padding:8px 14px;border-radius:10px;background:var(--lime);color:#08110A;
+  font-weight:700;font-size:13px;box-shadow:0 0 18px rgba(198,255,61,.28);
+}
+
+/* ---------- marquesina de actividad ---------- */
+.ticker{
+  margin:12px 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  background:var(--panel);overflow:hidden;position:relative;
+}
+.ticker-lbl{
+  position:absolute;left:0;top:0;bottom:0;z-index:2;display:flex;align-items:center;gap:5px;
+  padding:0 10px;background:var(--panel);border-right:1px solid var(--line);
+  font-size:9.5px;font-weight:700;letter-spacing:.12em;color:var(--dim);
+}
+.ticker-track{display:flex;gap:8px;padding:9px 10px 9px 128px;white-space:nowrap;animation:slide 34s linear infinite}
+.ticker:hover .ticker-track{animation-play-state:paused}
+@keyframes slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.pill{
+  display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;
+  background:var(--panel-2);border:1px solid var(--line);font-size:11.5px;flex:none;
+}
+
+/* ---------- secciones ---------- */
+.sec{padding:20px 14px 0}
+.sec-hd{display:flex;align-items:baseline;gap:8px;margin-bottom:11px}
+.sec-hd h2{margin:0;font-family:var(--display);font-size:16px;letter-spacing:.06em;text-transform:uppercase}
+.sec-hd .cnt{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.sec-hd .sp{flex:1}
+.sec-hd .link{font-size:12px;color:var(--lime);font-weight:700}
+
+/* ---------- destacados (carrusel) ---------- */
+.rail{display:flex;gap:11px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px;
+  scrollbar-width:none}
+.rail::-webkit-scrollbar{display:none}
+.feat{
+  flex:none;width:245px;scroll-snap-align:start;padding:13px;border-radius:14px;
+  background:linear-gradient(160deg,#16210D,var(--panel));
+  border:1px solid rgba(198,255,61,.28);position:relative;
+}
+.feat .tag{
+  position:absolute;top:11px;right:11px;padding:3px 7px;border-radius:5px;
+  background:var(--lime);color:#08110A;font-size:8.5px;font-weight:700;letter-spacing:.1em;
+}
+.feat-top{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.ava{width:38px;height:38px;border-radius:10px;flex:none;display:grid;place-items:center;
+  font-family:var(--display);font-size:16px;color:#08110A;background:var(--lime)}
+.feat h3{margin:0;font-size:14px;font-weight:700}
+.feat .sym{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.feat-lo{display:flex;align-items:flex-end;justify-content:space-between;margin-top:9px}
+.feat .cd{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+
+/* ---------- banner promo ---------- */
+.promo{
+  margin:14px 14px 0;padding:12px 14px;border-radius:12px;display:flex;align-items:center;gap:11px;
+  background:var(--panel);border:1px dashed rgba(198,255,61,.36);
+}
+.promo p{margin:0;font-size:12.5px;color:var(--dim);flex:1}
+.promo b{color:var(--text)}
+.promo button{padding:7px 12px;border-radius:8px;background:rgba(198,255,61,.13);
+  color:var(--lime);font-weight:700;font-size:12px;border:1px solid rgba(198,255,61,.3)}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{padding:7px 13px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line);
+  font-size:12.5px;font-weight:500;color:var(--dim);white-space:nowrap;flex:none}
+.tab.on{background:var(--lime);border-color:var(--lime);color:#08110A;font-weight:700}
+
+/* ---------- buscador ---------- */
+.search{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:9px 12px;
+  border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+.search input{flex:1;background:none;border:0;color:var(--text);outline:none}
+.search input::placeholder{color:var(--dim)}
+
+/* ---------- tarjeta de token ---------- */
+.tk{
+  display:block;width:100%;text-align:left;padding:13px;border-radius:13px;margin-bottom:10px;
+  background:var(--panel);border:1px solid var(--line);transition:border-color .18s,transform .18s;
+}
+.tk:active{transform:scale(.985)}
+.tk.grad{border-color:rgba(198,255,61,.4);background:linear-gradient(160deg,#131C0C,var(--panel))}
+.tk-top{display:flex;align-items:center;gap:10px}
+.tk-id{flex:1;min-width:0}
+.tk-id h3{margin:0;font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tk-id .sub{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.tk-pr{text-align:right;flex:none}
+.tk-pr .p{font-family:var(--mono);font-size:13.5px;font-weight:700}
+.tk-pr .d{font-family:var(--mono);font-size:11px}
+
+/* ---------- FIRMA: la mecha de la curva ---------- */
+.fuse{margin-top:12px}
+.fuse-hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+.fuse-hd span{font-size:10px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase}
+.fuse-hd b{font-family:var(--mono);font-size:11px;color:var(--lime)}
+.fuse-track{
+  position:relative;height:5px;border-radius:3px;background:var(--panel-2);
+  border:1px solid var(--line);overflow:visible;
+}
+.fuse-fill{
+  position:absolute;left:0;top:0;bottom:0;border-radius:3px;
+  background:linear-gradient(90deg,var(--lime-2),var(--lime));
+  box-shadow:0 0 10px rgba(198,255,61,.55);transition:width .5s ease;
+}
+.fuse-spark{
+  position:absolute;top:50%;width:9px;height:9px;border-radius:50%;
+  transform:translate(-50%,-50%);background:#fff;
+  box-shadow:0 0 8px 2px var(--lime),0 0 16px 5px rgba(198,255,61,.5);
+  animation:flick .9s infinite;transition:left .5s ease;
+}
+@keyframes flick{0%,100%{opacity:1}50%{opacity:.5}}
+.fuse-end{position:absolute;right:-3px;top:50%;transform:translateY(-50%);font-size:11px;
+  filter:grayscale(1) opacity(.4)}
+.fuse.done .fuse-end{filter:none;animation:lift 1.4s infinite}
+@keyframes lift{0%,100%{transform:translateY(-50%)}50%{transform:translateY(-78%)}}
+
+/* ---------- vacío / cargando ---------- */
+.empty{padding:46px 20px;text-align:center}
+.empty h3{margin:0 0 6px;font-family:var(--display);font-size:16px;letter-spacing:.05em}
+.empty p{margin:0 0 16px;font-size:13px;color:var(--dim)}
+.spin{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);
+  border-top-color:var(--lime);animation:rot .8s linear infinite;margin:0 auto}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* ---------- detalle de token ---------- */
+.back{display:flex;align-items:center;gap:7px;padding:14px 14px 0;font-size:13px;color:var(--dim);font-weight:500}
+.dt-hd{padding:14px}
+.dt-hd .row{display:flex;align-items:center;gap:12px}
+.dt-hd h1{margin:0;font-family:var(--display);font-size:24px;letter-spacing:.02em}
+.dt-price{display:flex;align-items:baseline;gap:9px;margin-top:12px}
+.dt-price .big{font-family:var(--mono);font-size:27px;font-weight:700}
+.chart{height:150px;margin:0 14px;border-radius:12px;background:var(--panel);
+  border:1px solid var(--line);overflow:hidden}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:14px}
+.stat{padding:11px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+.stat span{display:block;font-size:10px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase}
+.stat b{font-family:var(--mono);font-size:15px}
+
+/* ---------- panel comprar/vender ---------- */
+.trade{margin:0 14px 20px;padding:14px;border-radius:14px;background:var(--panel);border:1px solid var(--line)}
+.seg{display:flex;gap:6px;padding:4px;border-radius:10px;background:var(--bg);margin-bottom:13px}
+.seg button{flex:1;padding:9px;border-radius:7px;font-weight:700;font-size:13.5px;color:var(--dim)}
+.seg button.on{background:var(--lime);color:#08110A}
+.seg button.on.sell{background:var(--red);color:#fff}
+.amt{display:flex;align-items:center;gap:9px;padding:12px;border-radius:10px;
+  background:var(--bg);border:1px solid var(--line);margin-bottom:9px}
+.amt input{flex:1;background:none;border:0;color:var(--text);font-family:var(--mono);
+  font-size:20px;font-weight:700;outline:none;min-width:0}
+.amt .u{font-family:var(--mono);font-size:12px;color:var(--dim);font-weight:700}
+.chips{display:flex;gap:6px;margin-bottom:13px}
+.chips button{flex:1;padding:7px;border-radius:7px;background:var(--panel-2);
+  border:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+.recv{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-bottom:13px}
+.recv b{font-family:var(--mono);color:var(--text)}
+.cta{width:100%;padding:15px;border-radius:11px;background:var(--lime);color:#08110A;
+  font-weight:700;font-size:15.5px;box-shadow:0 0 22px rgba(198,255,61,.26)}
+.cta.sell{background:var(--red);color:#fff;box-shadow:0 0 22px rgba(255,77,106,.24)}
+.cta:disabled{opacity:.4;box-shadow:none}
+
+/* ---------- formularios ---------- */
+.form{padding:14px}
+.fld{margin-bottom:14px}
+.fld label{display:block;font-size:11px;letter-spacing:.1em;color:var(--dim);
+  text-transform:uppercase;margin-bottom:6px}
+.fld input,.fld textarea{width:100%;padding:12px;border-radius:10px;background:var(--panel);
+  border:1px solid var(--line);color:var(--text);outline:none}
+.fld input:focus,.fld textarea:focus{border-color:var(--lime)}
+.fld textarea{resize:vertical;min-height:74px}
+.fld .hint{font-size:11.5px;color:var(--dim);margin-top:5px}
+.fee{padding:13px;border-radius:11px;background:rgba(198,255,61,.07);
+  border:1px solid rgba(198,255,61,.26);margin-bottom:14px;font-size:13px}
+.fee b{color:var(--lime)}
+
+/* ---------- aviso sin auditoría ---------- */
+.warn{margin:14px;padding:12px;border-radius:11px;font-size:12.5px;color:#FFD9A0;
+  background:rgba(255,170,60,.08);border:1px solid rgba(255,170,60,.28)}
+
+/* ---------- perfil ---------- */
+.prof{padding:20px 14px;text-align:center}
+.prof .ava{width:74px;height:74px;border-radius:20px;margin:0 auto 12px;font-size:30px}
+.prof h1{margin:0;font-family:var(--display);font-size:20px}
+.prof .addr{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-top:3px}
+.stars{margin-top:9px;font-size:15px;letter-spacing:2px;color:var(--lime)}
+.badges{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-top:13px}
+.badge{padding:5px 11px;border-radius:999px;background:var(--panel-2);
+  border:1px solid var(--line);font-size:11.5px}
+.soon{margin:14px;padding:26px 18px;border-radius:13px;text-align:center;
+  background:var(--panel);border:1px dashed var(--line)}
+.soon h3{margin:0 0 6px;font-family:var(--display);font-size:15px;letter-spacing:.05em}
+.soon p{margin:0;font-size:12.5px;color:var(--dim)}
+
+/* ---------- nav inferior ---------- */
+.nav{
+  position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;
+  height:calc(var(--nav-h) + env(safe-area-inset-bottom));
+  padding-bottom:env(safe-area-inset-bottom);
+  background:#000;border-top:1px solid var(--line);
+}
+.nav button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:9.5px;letter-spacing:.05em;color:#4C5A55;font-weight:500}
+.nav button svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.9}
+.nav button.on{color:var(--lime)}
+.nav button.on svg{filter:drop-shadow(0 0 6px rgba(198,255,61,.65))}
+
+/* ---------- splash ---------- */
+.splash{
+  position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:30px 24px;text-align:center;
+  background:radial-gradient(120% 80% at 50% 0%,#131E08,var(--bg) 60%);
+}
+.splash .logo{width:148px;height:148px;margin-bottom:22px;animation:in .7s ease both}
+@keyframes in{from{opacity:0;transform:scale(.84)}to{opacity:1;transform:scale(1)}}
+.splash h1{margin:0 0 10px;font-family:var(--display);font-size:31px;letter-spacing:.03em}
+.splash h1 em{font-style:normal;color:var(--lime)}
+.splash p{margin:0 0 26px;font-size:14px;color:var(--dim);max-width:330px}
+.splash .cta{max-width:330px}
+.splash .fine{margin-top:16px;font-size:11px;color:#5A6863;max-width:320px}
+
+/* ---------- toast ---------- */
+.toast{
+  position:fixed;left:50%;bottom:calc(var(--nav-h) + 20px);transform:translateX(-50%);
+  z-index:300;padding:12px 18px;border-radius:11px;background:#111;border:1px solid var(--line);
+  font-size:13.5px;max-width:92vw;text-align:center;box-shadow:0 8px 28px rgba(0,0,0,.6);
+}
+</style>
+</head>
+<body>
+
+<!-- ===================== SPLASH ===================== -->
+<div class="splash" id="splash">
+  <svg class="logo" viewBox="0 0 200 200" aria-label="Logo de $FLICK">
+    <defs>
+      <path id="arcTop" d="M 30,100 A 70,70 0 0 1 170,100"/>
+      <path id="arcBot" d="M 36,100 A 64,64 0 0 0 164,100"/>
+    </defs>
+    <circle cx="100" cy="100" r="96" fill="#080C08"/>
+    <circle cx="100" cy="100" r="92" fill="none" stroke="#C6FF3D" stroke-width="4"/>
+    <circle cx="100" cy="100" r="79" fill="none" stroke="#C6FF3D" stroke-width="1.4" opacity=".5"/>
+    <text font-family="Anton,sans-serif" font-size="20" fill="#C6FF3D" letter-spacing="3">
+      <textPath href="#arcTop" startOffset="50%" text-anchor="middle">$FLICK</textPath>
+    </text>
+    <text font-family="Space Grotesk,sans-serif" font-size="11.5" font-weight="700" fill="#C6FF3D" letter-spacing="2.6">
+      <textPath href="#arcBot" startOffset="50%" text-anchor="middle">CREATE · PUMP · MOON</textPath>
+    </text>
+    <!-- F tipo rayo -->
+    <path d="M83 62 L131 62 L119 88 L104 88 L100 98 L114 98 L104 122 L89 122 L96 105 L78 138 L88 105 L75 105 Z"
+          fill="#C6FF3D" stroke="#C6FF3D" stroke-width="2" stroke-linejoin="round"/>
+  </svg>
+  <h1>Crea. Bombea. <em>A la luna.</em></h1>
+  <p>Lanza tu token en World Chain en menos de un minuto. Sube por la curva, y al llegar a 1500 WLD se gradúa solo a Uniswap.</p>
+  <button class="cta" id="splashBtn" onclick="conectarWallet()">Conectar wallet</button>
+  <p class="fine">Tu primer token es gratis. Los siguientes cuestan 6 WLD.</p>
+</div>
+
+<div class="app">
+
+<!-- ===================== HEADER ===================== -->
+<header class="hdr">
+  <svg class="mark" viewBox="0 0 200 200" aria-hidden="true">
+    <circle cx="100" cy="100" r="96" fill="#080C08"/>
+    <circle cx="100" cy="100" r="92" fill="none" stroke="#C6FF3D" stroke-width="8"/>
+    <path d="M83 62 L131 62 L119 88 L104 88 L100 98 L114 98 L104 122 L89 122 L96 105 L78 138 L88 105 L75 105 Z" fill="#C6FF3D"/>
+  </svg>
+  <div class="word">$<b>FLICK</b></div>
+  <div class="sp"></div>
+  <button class="wbtn" id="wbtn" onclick="conectarWallet()">Conectar</button>
+</header>
+
+<!-- ===================== EXPLORAR ===================== -->
+<main id="v-explorar">
+  <div class="chainbar">
+    <span class="live"><i></i>LIVE EN WORLDCHAIN</span>
+    <div class="sp"></div>
+    <button class="mk-token" onclick="ir('crear')">+ Crear token</button>
+  </div>
+
+  <div class="ticker">
+    <div class="ticker-lbl">⚡ ACTIVIDAD EN VIVO</div>
+    <div class="ticker-track" id="tickerTrack"></div>
+  </div>
+
+  <section class="sec">
+    <div class="sec-hd">
+      <h2>🔥 Destacados</h2>
+      <div class="sp"></div>
+      <span class="cnt" id="featCount"></span>
+    </div>
+    <div class="rail" id="featRail"></div>
+  </section>
+
+  <div class="promo">
+    <p><b>¿Quieres tu token aquí?</b><br>Destácalo por 2 WLD durante 24 horas.</p>
+    <button onclick="destacar()">Destacar</button>
+  </div>
+
+  <section class="sec">
+    <div class="sec-hd">
+      <h2>En tendencia</h2>
+      <div class="sp"></div>
+      <span class="cnt" id="listCount"></span>
+    </div>
+    <div class="search">
+      <span style="color:var(--dim)">🔍</span>
+      <input id="q" placeholder="Buscar por nombre o símbolo" oninput="pintarLista()">
+    </div>
+    <div class="tabs" id="tabs">
+      <button class="tab on" data-f="nuevos" onclick="setTab(this)">Nuevos</button>
+      <button class="tab" data-f="tendencia" onclick="setTab(this)">Tendencia</button>
+      <button class="tab" data-f="graduados" onclick="setTab(this)">Graduados</button>
+    </div>
+    <div id="lista"></div>
+  </section>
+  <div style="height:20px"></div>
+</main>
+
+<!-- ===================== DETALLE ===================== -->
+<main id="v-token" class="hidden">
+  <button class="back" onclick="ir('explorar')">← Volver a explorar</button>
+  <div class="dt-hd">
+    <div class="row">
+      <div class="ava" id="dAva">F</div>
+      <div style="flex:1;min-width:0">
+        <h1 id="dName">—</h1>
+        <div class="sub num" style="color:var(--dim);font-size:12px" id="dSym">—</div>
+      </div>
+    </div>
+    <div class="dt-price">
+      <span class="big num" id="dPrice">—</span>
+      <span class="num" id="dChg">—</span>
+    </div>
+  </div>
+  <div class="chart"><canvas id="chart"></canvas></div>
+  <div class="grid2">
+    <div class="stat"><span>Cap. de mercado</span><b id="dMcap">—</b></div>
+    <div class="stat"><span>Recaudado</span><b id="dRaised">—</b></div>
+    <div class="stat"><span>Poseedores</span><b id="dHolders">—</b></div>
+    <div class="stat"><span>Volumen 24h</span><b id="dVol">—</b></div>
+  </div>
+  <div style="padding:0 14px">
+    <div class="fuse" id="dFuse">
+      <div class="fuse-hd"><span>Progreso a graduación</span><b id="dPct">0%</b></div>
+      <div class="fuse-track">
+        <div class="fuse-fill" id="dFill" style="width:0%"></div>
+        <div class="fuse-spark" id="dSpark" style="left:0%"></div>
+        <div class="fuse-end">🚀</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="trade" style="margin-top:16px">
+    <div class="seg">
+      <button class="on" id="segBuy" onclick="setLado('comprar')">Comprar</button>
+      <button id="segSell" onclick="setLado('vender')">Vender</button>
+    </div>
+    <div class="amt">
+      <input id="amt" type="text" inputmode="decimal" placeholder="0.0" oninput="calcRecibe()">
+      <span class="u" id="amtU">WLD</span>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="recv"><span>Recibes aprox.</span><b id="recibe">—</b></div>
+    <button class="cta" id="tradeBtn" onclick="ejecutarTrade()">Comprar</button>
+  </div>
+</main>
+
+<!-- ===================== CREAR ===================== -->
+<main id="v-crear" class="hidden">
+  <button class="back" onclick="ir('explorar')">← Volver a explorar</button>
+  <div class="sec"><div class="sec-hd"><h2>Crear token</h2></div></div>
+  <div class="form">
+    <div class="fee" id="feeBox">Cargando tu tarifa…</div>
+    <div class="fld">
+      <label>Nombre</label>
+      <input id="cName" maxlength="32" placeholder="Mi Token Increíble">
+    </div>
+    <div class="fld">
+      <label>Símbolo</label>
+      <input id="cSym" maxlength="10" placeholder="MTI" oninput="this.value=this.value.toUpperCase()">
+      <div class="hint">Hasta 10 caracteres, sin espacios.</div>
+    </div>
+    <div class="fld">
+      <label>Descripción</label>
+      <textarea id="cDesc" maxlength="280" placeholder="¿De qué se trata tu token?"></textarea>
+    </div>
+    <div class="fld">
+      <label>Imagen (URL)</label>
+      <input id="cImg" placeholder="https://…">
+      <div class="hint">Cuadrada se ve mejor. Puedes dejarlo vacío.</div>
+    </div>
+    <button class="cta" id="crearBtn" onclick="crearToken()">Crear token</button>
+    <div class="warn" style="margin:14px 0 0">
+      Los contratos de $FLICK no han pasado una auditoría externa. Invierte solo lo que estés dispuesto a perder.
+    </div>
+  </div>
+</main>
+
+<!-- ===================== PORTAFOLIO ===================== -->
+<main id="v-portafolio" class="hidden">
+  <div class="sec"><div class="sec-hd"><h2>Portafolio</h2><div class="sp"></div><span class="cnt" id="pnlTotal"></span></div></div>
+  <div id="holdings" class="sec" style="padding-top:0"></div>
+</main>
+
+<!-- ===================== PERFIL ===================== -->
+<main id="v-perfil" class="hidden">
+  <div class="prof">
+    <div class="ava" id="pAva">F</div>
+    <h1 id="pName">Sin conectar</h1>
+    <div class="addr" id="pAddr">Conecta tu wallet para ver tu perfil</div>
+    <div class="stars" id="pStars">☆☆☆☆☆</div>
+    <div class="badges" id="pBadges"></div>
+  </div>
+  <div class="sec"><div class="sec-hd"><h2>Panel de creador</h2></div>
+    <div class="grid2" style="padding:0">
+      <div class="stat"><span>Tokens creados</span><b id="pCreated">0</b></div>
+      <div class="stat"><span>Comisiones ganadas</span><b id="pFees">0 WLD</b></div>
+    </div>
+  </div>
+  <div class="soon">
+    <h3>🪂 Airdrop</h3>
+    <p>Próximamente.</p>
+  </div>
+  <div style="height:20px"></div>
+</main>
+
+</div>
+
+<!-- ===================== NAV ===================== -->
+<nav class="nav" id="nav">
+  <button class="on" data-v="explorar" onclick="ir('explorar')">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>Explorar</button>
+  <button data-v="crear" onclick="ir('crear')">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Crear</button>
+  <button data-v="portafolio" onclick="ir('portafolio')">
+    <svg viewBox="0 0 24 24"><path d="M4 18V9M10 18V5M16 18v-6M22 18H2"/></svg>Portafolio</button>
+  <button data-v="perfil" onclick="ir('perfil')">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>Perfil</button>
+</nav>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+<script>
+/* ==================================================================
+   CONFIGURACIÓN
+   ================================================================== */
+const WORLD_CHAIN_RPC   = "https://worldchain-mainnet.g.alchemy.com/public";
+const CHAIN_ID          = 480;
+const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
+
+// FlickFactory desplegada en World Chain mainnet (bloque 33012392)
+const FLICK_FACTORY = "0xD02eB27D986a61fc333dd722350a966F57F87E0D";
+
+// ⚠️ PENDIENTE: crear la app en developer.worldcoin.org y pegar su App ID aquí.
+const FLICK_APP_ID = "app_PENDIENTE";
+
+// Con DEMO en true la app se ve completa con datos de ejemplo, sin tocar la cadena.
+// Al confirmar las firmas reales del contrato (ver FN más abajo), poner false.
+let DEMO = true;
+
+/* ==================================================================
+   FIRMAS DEL CONTRATO
+   ⚠️ Estas son suposiciones. Hay que reemplazarlas con las firmas
+   reales de FlickFactory.sol / FlickBondingCurve.sol antes de
+   apagar DEMO. Todo lo demás del archivo ya está listo.
+   ================================================================== */
+const FN = {
+  crearToken:  { sig:'createToken(string,string,string,string)', types:['string','string','string','string'] },
+  comprar:     { sig:'buy(uint256,uint256)',                     types:['uint256','uint256'] },
+  vender:      { sig:'sell(uint256,uint256)',                    types:['uint256','uint256'] },
+  aprobar:     { sig:'approve(address,uint256)',                 types:['address','uint256'] },
+};
+
+/* ==================================================================
+   ESTADO
+   ================================================================== */
+const S = {
+  vista:'explorar', wallet:'', username:'', conectado:false,
+  tokens:[], filtro:'nuevos', actual:null, lado:'comprar',
+  ultimoError:null,
+};
+
+/* ==================================================================
+   UTILIDADES
+   ================================================================== */
+const $ = id => document.getElementById(id);
+const lc = a => String(a).toLowerCase();
+const corto = a => a ? a.slice(0,6)+'…'+a.slice(-4) : '';
+
+function fmt(n,d=2){
+  n = Number(n)||0;
+  if(n >= 1e9) return (n/1e9).toFixed(2)+'B';
+  if(n >= 1e6) return (n/1e6).toFixed(2)+'M';
+  if(n >= 1e3) return (n/1e3).toFixed(2)+'K';
+  if(n > 0 && n < 0.0001) return n.toExponential(2);
+  return n.toFixed(d);
+}
+function toast(msg,ms=3000){
+  const el = document.createElement('div');
+  el.className = 'toast'; el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), ms);
+}
+function encodeCall(signature, types, values){
+  const selector = ethers.id(signature).slice(0,10);
+  if(!types.length) return selector;
+  const safe = values.map((v,i)=> types[i]==='address' && typeof v==='string' ? lc(v) : v);
+  return selector + ethers.AbiCoder.defaultAbiCoder().encode(types, safe).slice(2);
+}
+async function rpcCall(to, data, retries=2){
+  try{
+    const res = await fetch(WORLD_CHAIN_RPC, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to,data},'latest']})
+    });
+    const j = await res.json();
+    if(j.error){ console.error('rpc:', j.error); return null; }
+    return j.result;
+  }catch(e){
+    if(retries>0){ await new Promise(r=>setTimeout(r,800)); return rpcCall(to,data,retries-1); }
+    return null;
+  }
+}
+
+/* ==================================================================
+   WALLET — MiniKit dentro de World App, wallet inyectada fuera
+   ================================================================== */
+function mkRef(){ return window._MiniKit || window.MiniKit; }
+function enWorldApp(){ const mk = mkRef(); return !!(mk && mk.isInstalled && mk.isInstalled()); }
+
+function nonceSiwe(){
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function conectarWallet(){
+  const btn = $('splashBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Conectando…'; }
+
+  // Esperar a que el módulo termine de instalar MiniKit
+  let t = 0;
+  while(typeof window.__miniKitLoaded === 'undefined' && t < 30){
+    await new Promise(r=>setTimeout(r,100)); t++;
+  }
+
+  try{
+    if(enWorldApp()){
+      const mk = mkRef();
+      const r = await mk.walletAuth({ nonce: nonceSiwe(), statement: 'Bienvenido a $FLICK' });
+      const p = r && (r.finalPayload || r.data || r);
+      const addr = (p && p.address) || mk.walletAddress || (mk.user && mk.user.walletAddress) || '';
+      if(!addr) throw new Error('No se recibió dirección');
+      S.wallet = addr;
+      S.username = (mk.user && mk.user.username) || '';
+    } else if(window.ethereum){
+      const cuentas = await window.ethereum.request({ method:'eth_requestAccounts' });
+      if(!cuentas || !cuentas.length) throw new Error('Sin cuentas');
+      S.wallet = cuentas[0];
+    } else {
+      toast('Abre $FLICK en World App o instala una wallet');
+      if(btn){ btn.disabled=false; btn.textContent='Conectar wallet'; }
+      return;
+    }
+
+    S.conectado = true;
+    $('splash').classList.add('hidden');
+    const w = $('wbtn');
+    w.classList.add('on');
+    w.innerHTML = '<span class="dot"></span>' + (S.username ? '@'+S.username : corto(S.wallet));
+    toast('✅ Wallet conectada');
+    renderTodo();
+  }catch(e){
+    console.error(e);
+    toast('❌ ' + (e.message||'No se pudo conectar').slice(0,70));
+    if(btn){ btn.disabled=false; btn.textContent='Conectar wallet'; }
+  }
+}
+
+async function enviarTx(transacciones){
+  if(!S.conectado){ toast('Conecta tu wallet primero'); return false; }
+  try{
+    if(enWorldApp()){
+      const r = await mkRef().sendTransaction({ chainId: CHAIN_ID, transactions: transacciones });
+      const ok = r && ((r.data && r.data.status==='success') || (r.finalPayload && r.finalPayload.status!=='error'));
+      if(!ok) S.ultimoError = JSON.stringify(r||{}).slice(0,180);
+      return !!ok;
+    }
+    for(const tx of transacciones){
+      await window.ethereum.request({
+        method:'eth_sendTransaction',
+        params:[{ from:S.wallet, to:tx.to, data:tx.data }]
+      });
+    }
+    return true;
+  }catch(e){
+    S.ultimoError = e.message || String(e);
+    return false;
+  }
+}
+
+/* ==================================================================
+   DATOS
+   ================================================================== */
+const EJEMPLO = [
+  {n:'Chancla Voladora', s:'CHANCLA', p:0.000412, ch:187.4, raised:1284, hold:842, vol:9400, grad:false, dest:true,  fin:Date.now()+7.2e6},
+  {n:'Perro Bombeador',  s:'PUMPDOG', p:0.000158, ch:42.1,  raised:612,  hold:317, vol:3100, grad:false, dest:true,  fin:Date.now()+3.4e6},
+  {n:'Rayo Verde',       s:'RAYO',    p:0.001940, ch:-12.8, raised:1500, hold:1204,vol:22800,grad:true,  dest:false, fin:0},
+  {n:'Luna Llena',       s:'LUNA',    p:0.000071, ch:8.3,   raised:214,  hold:96,  vol:840,  grad:false, dest:false, fin:0},
+  {n:'Tortilla Cósmica', s:'TORTI',   p:0.000029, ch:-4.5,  raised:88,   hold:41,  vol:290,  grad:false, dest:false, fin:0},
+  {n:'Cohete Barato',    s:'COHETE',  p:0.000505, ch:63.9,  raised:948,  hold:503, vol:6200, grad:false, dest:false, fin:0},
+];
+
+async function cargarTokens(){
+  if(DEMO){ S.tokens = EJEMPLO.slice(); return; }
+  // Con las firmas reales confirmadas, aquí van las lecturas por RPC
+  // (contador de tokens + datos de cada curva). Ver FN arriba.
+  S.tokens = [];
+}
+
+/* ==================================================================
+   RENDER
+   ================================================================== */
+function ir(v){
+  S.vista = v;
+  ['explorar','token','crear','portafolio','perfil'].forEach(x=>{
+    const el = $('v-'+x); if(el) el.classList.toggle('hidden', x!==v);
+  });
+  document.querySelectorAll('.nav button').forEach(b=>
+    b.classList.toggle('on', b.dataset.v===v));
+  window.scrollTo(0,0);
+  if(v==='portafolio') pintarPortafolio();
+  if(v==='perfil')     pintarPerfil();
+  if(v==='crear')      pintarTarifa();
+}
+
+function pintarTicker(){
+  const acciones = S.tokens.length ? S.tokens : EJEMPLO;
+  const items = [];
+  for(let i=0;i<14;i++){
+    const t = acciones[i % acciones.length];
+    const compra = Math.random() > .35;
+    const monto = (Math.random()*40+2).toFixed(1);
+    items.push(`<span class="pill">
+      <span class="${compra?'up':'down'}">${compra?'▲':'▼'}</span>
+      <b class="num">${monto} WLD</b>
+      <span style="color:var(--dim)">${t.s}</span></span>`);
+  }
+  // duplicado para que el bucle sea continuo
+  $('tickerTrack').innerHTML = items.join('') + items.join('');
+}
+
+function tarjetaFuse(t){
+  const pct = Math.min(100, (t.raised/1500)*100);
+  return `<div class="fuse ${pct>=100?'done':''}">
+    <div class="fuse-hd">
+      <span>${pct>=100?'Graduado a Uniswap':'Curva de vinculación'}</span>
+      <b>${pct.toFixed(1)}%</b>
+    </div>
+    <div class="fuse-track">
+      <div class="fuse-fill" style="width:${pct}%"></div>
+      ${pct>0&&pct<100?`<div class="fuse-spark" style="left:${pct}%"></div>`:''}
+      <div class="fuse-end">🚀</div>
+    </div>
+  </div>`;
+}
+
+function pintarDestacados(){
+  const d = S.tokens.filter(t=>t.dest);
+  $('featCount').textContent = d.length ? d.length+' activos' : '';
+  if(!d.length){
+    $('featRail').innerHTML = `<div class="feat" style="width:100%;border-style:dashed">
+      <div style="color:var(--dim);font-size:12.5px">Todavía no hay tokens destacados.</div></div>`;
+    return;
+  }
+  $('featRail').innerHTML = d.map(t=>{
+    const h = Math.max(0, Math.floor((t.fin-Date.now())/3.6e6));
+    const m = Math.max(0, Math.floor(((t.fin-Date.now())%3.6e6)/6e4));
+    return `<button class="feat" onclick="abrirToken('${t.s}')">
+      <span class="tag">DESTACADO</span>
+      <div class="feat-top">
+        <div class="ava">${t.s[0]}</div>
+        <div style="min-width:0">
+          <h3>${t.n}</h3><div class="sym">$${t.s}</div>
+        </div>
+      </div>
+      ${tarjetaFuse(t)}
+      <div class="feat-lo">
+        <span class="num ${t.ch>=0?'up':'down'}">${t.ch>=0?'+':''}${t.ch.toFixed(1)}%</span>
+        <span class="cd">termina en ${h}h ${m}m</span>
+      </div>
+    </button>`;
+  }).join('');
+}
+
+function pintarLista(){
+  const q = ($('q').value||'').toLowerCase();
+  let l = S.tokens.slice();
+  if(S.filtro==='graduados')      l = l.filter(t=>t.grad);
+  else if(S.filtro==='tendencia') l = l.filter(t=>!t.grad).sort((a,b)=>b.vol-a.vol);
+  else                            l = l.filter(t=>!t.grad);
+  if(q) l = l.filter(t=> t.n.toLowerCase().includes(q) || t.s.toLowerCase().includes(q));
+
+  $('listCount').textContent = l.length ? l.length+(l.length===1?' token':' tokens') : '';
+
+  if(!l.length){
+    $('lista').innerHTML = `<div class="empty">
+      <h3>Nada por aquí todavía</h3>
+      <p>${q ? 'Ningún token coincide con tu búsqueda.' : 'Sé el primero en lanzar uno.'}</p>
+      ${q ? '' : '<button class="cta" onclick="ir(\'crear\')">Crear el primer token</button>'}
+    </div>`;
+    return;
+  }
+  $('lista').innerHTML = l.map(t=>`
+    <button class="tk ${t.grad?'grad':''}" onclick="abrirToken('${t.s}')">
+      <div class="tk-top">
+        <div class="ava">${t.s[0]}</div>
+        <div class="tk-id">
+          <h3>${t.n}</h3>
+          <div class="sub">$${t.s} · ${fmt(t.hold,0)} poseedores</div>
+        </div>
+        <div class="tk-pr">
+          <div class="p">${t.p.toFixed(6)}</div>
+          <div class="d ${t.ch>=0?'up':'down'}">${t.ch>=0?'+':''}${t.ch.toFixed(1)}%</div>
+        </div>
+      </div>
+      ${tarjetaFuse(t)}
+    </button>`).join('');
+}
+
+function setTab(btn){
+  document.querySelectorAll('#tabs .tab').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  S.filtro = btn.dataset.f;
+  pintarLista();
+}
+
+/* ---------- detalle ---------- */
+function abrirToken(sym){
+  const t = S.tokens.find(x=>x.s===sym);
+  if(!t) return;
+  S.actual = t;
+  $('dAva').textContent = t.s[0];
+  $('dName').textContent = t.n;
+  $('dSym').textContent = '$'+t.s;
+  $('dPrice').textContent = t.p.toFixed(6)+' WLD';
+  const chg = $('dChg');
+  chg.textContent = (t.ch>=0?'+':'')+t.ch.toFixed(1)+'%';
+  chg.className = 'num ' + (t.ch>=0?'up':'down');
+  $('dMcap').textContent   = fmt(t.p*1e9)+' WLD';
+  $('dRaised').textContent = fmt(t.raised)+' / 1500';
+  $('dHolders').textContent= fmt(t.hold,0);
+  $('dVol').textContent    = fmt(t.vol)+' WLD';
+
+  const pct = Math.min(100,(t.raised/1500)*100);
+  $('dPct').textContent  = pct.toFixed(1)+'%';
+  $('dFill').style.width = pct+'%';
+  $('dSpark').style.left = pct+'%';
+  $('dFuse').classList.toggle('done', pct>=100);
+
+  dibujarChart(t);
+  setLado('comprar');
+  ir('token');
+}
+
+function dibujarChart(t){
+  const c = $('chart'), ctx = c.getContext('2d');
+  const w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio||1;
+  c.width = w*dpr; c.height = h*dpr; ctx.scale(dpr,dpr);
+
+  // serie sintética coherente con el cambio de 24h del token
+  const n = 48, pts = [];
+  let v = t.p / (1 + t.ch/100);
+  for(let i=0;i<n;i++){
+    v *= 1 + (t.ch/100)/n + (Math.random()-.5)*0.035;
+    pts.push(v);
+  }
+  pts[n-1] = t.p;
+  const min = Math.min(...pts), max = Math.max(...pts), r = (max-min)||1;
+  const x = i => (i/(n-1))*w;
+  const y = p => h - 10 - ((p-min)/r)*(h-22);
+  const sube = t.ch >= 0;
+  const col = sube ? '#C6FF3D' : '#FF4D6A';
+
+  const g = ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0, sube?'rgba(198,255,61,.28)':'rgba(255,77,106,.26)');
+  g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.beginPath(); ctx.moveTo(0,h);
+  pts.forEach((p,i)=>ctx.lineTo(x(i),y(p)));
+  ctx.lineTo(w,h); ctx.closePath(); ctx.fillStyle=g; ctx.fill();
+
+  ctx.beginPath();
+  pts.forEach((p,i)=> i?ctx.lineTo(x(i),y(p)):ctx.moveTo(x(i),y(p)));
+  ctx.strokeStyle=col; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
+
+  ctx.beginPath(); ctx.arc(x(n-1),y(pts[n-1]),3.5,0,7); ctx.fillStyle=col; ctx.fill();
+}
+
+function setLado(l){
+  S.lado = l;
+  const comprando = l==='comprar';
+  $('segBuy').classList.toggle('on', comprando);
+  $('segSell').classList.toggle('on', !comprando);
+  $('segSell').classList.toggle('sell', !comprando);
+  $('amtU').textContent = comprando ? 'WLD' : (S.actual?S.actual.s:'');
+  const b = $('tradeBtn');
+  b.textContent = comprando ? 'Comprar' : 'Vender';
+  b.classList.toggle('sell', !comprando);
+  $('chips').innerHTML = (comprando ? [1,5,10,25] : [25,50,75,100])
+    .map(v=>`<button onclick="setMonto(${v},${comprando})">${comprando?v+' WLD':v+'%'}</button>`).join('');
+  $('amt').value = ''; calcRecibe();
+}
+function setMonto(v, comprando){
+  $('amt').value = comprando ? v : v; // en venta: porcentaje del saldo (pendiente saldo real)
+  calcRecibe();
+}
+function calcRecibe(){
+  const t = S.actual; if(!t) return;
+  const a = parseFloat($('amt').value)||0;
+  if(!a){ $('recibe').textContent='—'; return; }
+  $('recibe').textContent = S.lado==='comprar'
+    ? fmt(a/t.p,0)+' '+t.s
+    : fmt(a*t.p,4)+' WLD';
+}
+
+async function ejecutarTrade(){
+  if(!S.conectado){ return conectarWallet(); }
+  if(DEMO){ toast('Modo demo: falta confirmar las firmas del contrato'); return; }
+  const t = S.actual, a = parseFloat($('amt').value)||0;
+  if(!a){ toast('Escribe un monto'); return; }
+  const btn = $('tradeBtn'); btn.disabled = true;
+  try{
+    const wei = ethers.parseUnits(String(a), 18);
+    const txs = [];
+    if(S.lado==='comprar'){
+      txs.push({ to: lc(WLD_TOKEN_ADDRESS),
+                 data: encodeCall(FN.aprobar.sig, FN.aprobar.types, [t.curva, wei]) });
+      txs.push({ to: lc(t.curva),
+                 data: encodeCall(FN.comprar.sig, FN.comprar.types, [wei, 0]) });
+    } else {
+      txs.push({ to: lc(t.curva),
+                 data: encodeCall(FN.vender.sig, FN.vender.types, [wei, 0]) });
+    }
+    const ok = await enviarTx(txs);
+    toast(ok ? '✅ Listo' : '❌ '+(S.ultimoError||'falló la transacción').slice(0,70));
+    if(ok){ await cargarTokens(); renderTodo(); }
+  } finally { btn.disabled = false; }
+}
+
+/* ---------- crear ---------- */
+function pintarTarifa(){
+  $('feeBox').innerHTML = S.conectado
+    ? 'Tu primer token es <b>gratis</b>. Después, cada uno cuesta <b>6 WLD</b>.'
+    : 'Conecta tu wallet para ver tu tarifa. El primer token de cada wallet es <b>gratis</b>.';
+}
+async function crearToken(){
+  if(!S.conectado){ return conectarWallet(); }
+  const n = $('cName').value.trim(), s = $('cSym').value.trim();
+  if(n.length < 2){ toast('Escribe un nombre'); return; }
+  if(s.length < 2){ toast('Escribe un símbolo'); return; }
+  if(DEMO){ toast('Modo demo: falta confirmar las firmas del contrato'); return; }
+  const btn = $('crearBtn'); btn.disabled = true; btn.textContent = 'Creando…';
+  try{
+    const data = encodeCall(FN.crearToken.sig, FN.crearToken.types,
+      [n, s, $('cDesc').value.trim(), $('cImg').value.trim()]);
+    const ok = await enviarTx([{ to: lc(FLICK_FACTORY), data }]);
+    if(ok){
+      toast('🚀 Token creado');
+      $('cName').value=$('cSym').value=$('cDesc').value=$('cImg').value='';
+      await cargarTokens(); renderTodo(); ir('explorar');
+    } else {
+      toast('❌ '+(S.ultimoError||'falló la creación').slice(0,70));
+    }
+  } finally { btn.disabled=false; btn.textContent='Crear token'; }
+}
+
+function destacar(){
+  if(!S.conectado) return conectarWallet();
+  toast('Destacar cuesta 2 WLD por 24h — pendiente de conectar');
+}
+
+/* ---------- portafolio ---------- */
+function pintarPortafolio(){
+  if(!S.conectado){
+    $('holdings').innerHTML = `<div class="empty">
+      <h3>Conecta tu wallet</h3><p>Aquí verás tus tokens y tus ganancias.</p>
+      <button class="cta" onclick="conectarWallet()">Conectar wallet</button></div>`;
+    $('pnlTotal').textContent=''; return;
+  }
+  $('holdings').innerHTML = `<div class="empty">
+    <h3>Sin posiciones</h3><p>Cuando compres un token aparecerá aquí.</p>
+    <button class="cta" onclick="ir('explorar')">Explorar tokens</button></div>`;
+  $('pnlTotal').textContent = '0 WLD';
+}
+
+/* ---------- perfil ---------- */
+function pintarPerfil(){
+  if(!S.conectado){
+    $('pName').textContent = 'Sin conectar';
+    $('pAddr').textContent = 'Conecta tu wallet para ver tu perfil';
+    $('pBadges').innerHTML = '';
+    return;
+  }
+  $('pAva').textContent  = (S.username||S.wallet||'F')[0].toUpperCase();
+  $('pName').textContent = S.username ? '@'+S.username : 'Anónimo';
+  $('pAddr').textContent = corto(S.wallet);
+  $('pStars').textContent= '★☆☆☆☆';
+  $('pBadges').innerHTML = ['🌱 Nuevo por aquí'].map(b=>`<span class="badge">${b}</span>`).join('');
+}
+
+/* ==================================================================
+   ARRANQUE
+   ================================================================== */
+function renderTodo(){
+  pintarTicker(); pintarDestacados(); pintarLista();
+  if(S.vista==='perfil') pintarPerfil();
+  if(S.vista==='portafolio') pintarPortafolio();
+  if(S.vista==='crear') pintarTarifa();
+}
+(async function init(){
+  await cargarTokens();
+  renderTodo();
+  window.addEventListener('resize', ()=>{ if(S.actual && S.vista==='token') dibujarChart(S.actual); });
+})();
+</script>
+
+<script type="module">
+  try{
+    const { MiniKit } = await import('https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js/+esm');
+    MiniKit.install(window.FLICK_APP_ID || 'app_PENDIENTE');
+    window._MiniKit = MiniKit;
+    window.__miniKitLoaded = true;
+    console.log('MiniKit listo:', MiniKit.isInstalled());
+  }catch(e){
+    console.error('MiniKit error:', e);
+    window.__miniKitLoaded = false;
+  }
+</script>
+</body>
+</html>
