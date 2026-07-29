@@ -259,6 +259,8 @@ img.ava{object-fit:cover;display:block;background:var(--panel-2)}
 .picker-prev{width:44px;height:44px;border-radius:10px;flex:none;display:grid;place-items:center;
   font-size:19px;background:var(--panel-2);overflow:hidden}
 .picker-prev img{width:100%;height:100%;object-fit:cover;display:block}
+.edit-btn{width:100%;padding:11px;border-radius:10px;background:var(--panel-2);
+  border:1px solid var(--line);color:var(--lime);font-weight:700;font-size:13px}
 
 /* ---------- aviso sin auditoría ---------- */
 .warn{margin:14px;padding:12px;border-radius:11px;font-size:12.5px;color:#FFD9A0;
@@ -437,6 +439,29 @@ img.ava{object-fit:cover;display:block;background:var(--panel-2)}
     </div>
   </div>
 
+  <div style="padding:14px 14px 0">
+    <button class="edit-btn hidden" id="dEditBtn" onclick="abrirEditor()">
+      ✏️ Editar imagen y descripción
+    </button>
+  </div>
+
+  <div class="trade hidden" id="dEditor" style="margin-top:14px">
+    <div class="fld">
+      <label>Descripción</label>
+      <textarea id="eDesc" maxlength="280" placeholder="¿De qué se trata tu token?"></textarea>
+    </div>
+    <div class="fld">
+      <label>Imagen</label>
+      <input id="eImgFile" type="file" accept="image/*" class="hidden"
+             onchange="elegirImagenEn(this,'eImgPrev','eImgTxt')">
+      <button class="picker" onclick="document.getElementById('eImgFile').click()">
+        <span id="eImgPrev" class="picker-prev">🖼️</span>
+        <span id="eImgTxt">Elegir de la galería</span>
+      </button>
+    </div>
+    <button class="cta" id="eGuardar" onclick="guardarMeta()">Guardar en la cadena</button>
+  </div>
+
   <div class="trade" style="margin-top:16px">
     <div class="seg">
       <button class="on" id="segBuy" onclick="setLado('comprar')">Comprar</button>
@@ -580,6 +605,7 @@ const FN = {
   graduado:     { sig:'graduated()',                  types:[] },
   resQuote:     { sig:'virtualQuoteReserve()',        types:[] },
   resToken:     { sig:'virtualTokenReserve()',        types:[] },
+  creador:      { sig:'creator()',                    types:[] },
   // FlickMetadata
   fijarMeta:    { sig:'setMetadata(address,string,string,bytes)',
                   types:['address','string','string','bytes'] },
@@ -844,7 +870,7 @@ async function cargarTokens(){
       if(!c || /^0x0+$/.test(c[0])) return null;
       const curva = c[0];
 
-      const [nom, sim, rec, meta, grad, rq, rt] = await Promise.all([
+      const [nom, sim, rec, meta, grad, rq, rt, cre] = await Promise.all([
         leer(dirToken,'nombre',[],['string']),
         leer(dirToken,'simbolo',[],['string']),
         leer(curva,'recaudado',[],['uint256']),
@@ -852,6 +878,7 @@ async function cargarTokens(){
         leer(curva,'graduado',[],['bool']),
         leer(curva,'resQuote',[],['uint256']),
         leer(curva,'resToken',[],['uint256']),
+        leer(curva,'creador',[],['address']),
       ]);
 
       const raised = rec ? n18(rec[0]) : 0;
@@ -862,6 +889,7 @@ async function cargarTokens(){
         n: nom ? nom[0] : 'Token',
         s: sim ? sim[0] : '???',
         dir: dirToken, curva,
+        creador: cre ? cre[0] : '',
         p: precio, ch: 0,
         raised, target,
         hold: 0, vol: 0,
@@ -1043,6 +1071,10 @@ function abrirToken(sym){
 
   dibujarChart(t);
   setLado('comprar');
+  // el editor de metadatos solo lo ve el creador del token
+  const esMio = S.conectado && t.creador && lc(t.creador) === lc(S.wallet);
+  $('dEditBtn').classList.toggle('hidden', !esMio);
+  $('dEditor').classList.add('hidden');
   ir('token');
 }
 
@@ -1175,21 +1207,58 @@ async function pintarTarifa(){
     : `Tu primer token es <b>gratis</b>. Los siguientes costarán ${fmt(tarifa,0)} WLD.`;
 }
 
-async function elegirImagen(input){
+async function elegirImagenEn(input, prevId, txtId){
   const file = input.files && input.files[0];
   if(!file) return;
-  $('cImgTxt').textContent = 'Comprimiendo…';
+  $(txtId).textContent = 'Comprimiendo…';
   try{
     const r = await comprimirImagen(file);
-    if(!r){ toast('No se pudo comprimir esa imagen'); $('cImgTxt').textContent='Elegir de la galería'; return; }
+    if(!r){ toast('No se pudo comprimir esa imagen'); $(txtId).textContent='Elegir de la galería'; return; }
     S.imgBytes = r.bytes; S.imgMime = r.mime;
-    $('cImgPrev').innerHTML = `<img src="${r.dataUrl}" alt="">`;
-    $('cImgTxt').textContent = 'Listo · ' + (r.peso/1024).toFixed(1) + ' KB';
+    $(prevId).innerHTML = `<img src="${r.dataUrl}" alt="">`;
+    $(txtId).textContent = 'Listo · ' + (r.peso/1024).toFixed(1) + ' KB';
   }catch(e){
     console.error(e);
     toast('No se pudo leer la imagen');
-    $('cImgTxt').textContent = 'Elegir de la galería';
+    $(txtId).textContent = 'Elegir de la galería';
   }
+}
+function elegirImagen(input){ return elegirImagenEn(input, 'cImgPrev', 'cImgTxt'); }
+
+// Editor de metadatos, solo para el creador del token
+function abrirEditor(){
+  const t = S.actual; if(!t) return;
+  S.imgBytes = null; S.imgMime = null;
+  $('eDesc').value = t.desc || '';
+  $('eImgPrev').innerHTML = t.img ? `<img src="${t.img}" alt="">` : '🖼️';
+  $('eImgTxt').textContent = t.img ? 'Cambiar imagen' : 'Elegir de la galería';
+  $('dEditor').classList.remove('hidden');
+  $('dEditBtn').classList.add('hidden');
+  $('dEditor').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+async function guardarMeta(){
+  const t = S.actual; if(!t) return;
+  if(!S.conectado) return conectarWallet();
+  const desc = $('eDesc').value.trim();
+  if(!desc && !S.imgBytes){ toast('Pon una descripción o una imagen'); return; }
+
+  const btn = $('eGuardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+  try{
+    const ok = await enviarTx([{ to: lc(FLICK_METADATA),
+      data: encodeCall(FN.fijarMeta.sig, FN.fijarMeta.types,
+        [t.dir, desc, S.imgMime || '', S.imgBytes || '0x']) }]);
+    if(ok){
+      toast('✅ Guardado en la cadena');
+      S.imgBytes = null; S.imgMime = null;
+      $('dEditor').classList.add('hidden');
+      await cargarTokens(); renderTodo();
+      const fresco = S.tokens.find(x => x.dir === t.dir);
+      if(fresco) abrirToken(fresco.s);
+    } else {
+      toast('❌ '+(S.ultimoError||'no se pudo guardar').slice(0,70));
+    }
+  } finally { btn.disabled = false; btn.textContent = 'Guardar en la cadena'; }
 }
 
 async function crearToken(){
