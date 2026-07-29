@@ -87,14 +87,15 @@ input,textarea,select{font-family:inherit;font-size:15px}
 /* ---------- marquesina de actividad ---------- */
 .ticker{
   margin:12px 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
-  background:var(--panel);overflow:hidden;position:relative;
+  background:var(--panel);display:flex;align-items:stretch;
 }
 .ticker-lbl{
-  position:absolute;left:0;top:0;bottom:0;z-index:2;display:flex;align-items:center;gap:5px;
-  padding:0 10px;background:var(--panel);border-right:1px solid var(--line);
+  flex:none;display:flex;align-items:center;gap:5px;white-space:nowrap;
+  padding:9px 10px;background:var(--panel);border-right:1px solid var(--line);
   font-size:9.5px;font-weight:700;letter-spacing:.12em;color:var(--dim);
 }
-.ticker-track{display:flex;gap:8px;padding:9px 10px 9px 128px;white-space:nowrap;animation:slide 34s linear infinite}
+.ticker-view{flex:1;min-width:0;overflow:hidden}
+.ticker-track{display:flex;gap:8px;padding:9px 10px;white-space:nowrap;width:max-content;animation:slide 34s linear infinite}
 .ticker:hover .ticker-track{animation-play-state:paused}
 @keyframes slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .pill{
@@ -123,10 +124,12 @@ input,textarea,select{font-family:inherit;font-size:15px}
   position:absolute;top:11px;right:11px;padding:3px 7px;border-radius:5px;
   background:var(--lime);color:#08110A;font-size:8.5px;font-weight:700;letter-spacing:.1em;
 }
-.feat-top{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.feat-top{display:flex;align-items:center;gap:9px;margin-bottom:10px;padding-right:78px}
 .ava{width:38px;height:38px;border-radius:10px;flex:none;display:grid;place-items:center;
   font-family:var(--display);font-size:16px;color:#08110A;background:var(--lime)}
-.feat h3{margin:0;font-size:14px;font-weight:700}
+img.ava{object-fit:cover;display:block;background:var(--panel-2)}
+.dt-desc{margin:12px 0 0;font-size:13.5px;color:var(--dim);line-height:1.5}
+.feat h3{margin:0;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .feat .sym{font-family:var(--mono);font-size:11px;color:var(--dim)}
 .feat-lo{display:flex;align-items:flex-end;justify-content:space-between;margin-top:9px}
 .feat .cd{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
@@ -251,6 +254,11 @@ input,textarea,select{font-family:inherit;font-size:15px}
 .fee{padding:13px;border-radius:11px;background:rgba(198,255,61,.07);
   border:1px solid rgba(198,255,61,.26);margin-bottom:14px;font-size:13px}
 .fee b{color:var(--lime)}
+.picker{display:flex;align-items:center;gap:11px;width:100%;padding:11px;border-radius:10px;
+  background:var(--panel);border:1px dashed var(--line);text-align:left;font-size:13.5px}
+.picker-prev{width:44px;height:44px;border-radius:10px;flex:none;display:grid;place-items:center;
+  font-size:19px;background:var(--panel-2);overflow:hidden}
+.picker-prev img{width:100%;height:100%;object-fit:cover;display:block}
 
 /* ---------- aviso sin auditoría ---------- */
 .warn{margin:14px;padding:12px;border-radius:11px;font-size:12.5px;color:#FFD9A0;
@@ -356,8 +364,8 @@ input,textarea,select{font-family:inherit;font-size:15px}
   </div>
 
   <div class="ticker">
-    <div class="ticker-lbl">⚡ ACTIVIDAD EN VIVO</div>
-    <div class="ticker-track" id="tickerTrack"></div>
+    <div class="ticker-lbl">⚡ EN VIVO</div>
+    <div class="ticker-view"><div class="ticker-track" id="tickerTrack"></div></div>
   </div>
 
   <section class="sec">
@@ -399,7 +407,7 @@ input,textarea,select{font-family:inherit;font-size:15px}
   <button class="back" onclick="ir('explorar')">← Volver a explorar</button>
   <div class="dt-hd">
     <div class="row">
-      <div class="ava" id="dAva">F</div>
+      <span id="dAvaBox"></span>
       <div style="flex:1;min-width:0">
         <h1 id="dName">—</h1>
         <div class="sub num" style="color:var(--dim);font-size:12px" id="dSym">—</div>
@@ -409,6 +417,7 @@ input,textarea,select{font-family:inherit;font-size:15px}
       <span class="big num" id="dPrice">—</span>
       <span class="num" id="dChg">—</span>
     </div>
+    <p class="dt-desc hidden" id="dDesc"></p>
   </div>
   <div class="chart"><canvas id="chart"></canvas></div>
   <div class="grid2">
@@ -463,11 +472,18 @@ input,textarea,select{font-family:inherit;font-size:15px}
       <textarea id="cDesc" maxlength="280" placeholder="¿De qué se trata tu token?"></textarea>
     </div>
     <div class="fld">
-      <label>Imagen (URL)</label>
-      <input id="cImg" placeholder="https://…">
-      <div class="hint">Cuadrada se ve mejor. Puedes dejarlo vacío.</div>
+      <label>Imagen</label>
+      <input id="cImgFile" type="file" accept="image/*" class="hidden" onchange="elegirImagen(this)">
+      <button class="picker" id="cImgBtn" onclick="document.getElementById('cImgFile').click()">
+        <span id="cImgPrev" class="picker-prev">🖼️</span>
+        <span id="cImgTxt">Elegir de la galería</span>
+      </button>
+      <div class="hint">Se recorta cuadrada a 128×128 y se guarda en la cadena. Opcional.</div>
     </div>
     <button class="cta" id="crearBtn" onclick="crearToken()">Crear token</button>
+    <div class="hint" style="margin-top:10px;text-align:center">
+      Si pones descripción o imagen, World App te va a pedir dos firmas: una para crear el token y otra para guardar sus datos.
+    </div>
     <div class="warn" style="margin:14px 0 0">
       Los contratos de $FLICK no han pasado una auditoría externa. Invierte solo lo que estés dispuesto a perder.
     </div>
@@ -528,25 +544,54 @@ const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 // FlickFactory desplegada en World Chain mainnet (bloque 33012392)
 const FLICK_FACTORY = "0xD02eB27D986a61fc333dd722350a966F57F87E0D";
 
-// ⚠️ PENDIENTE: crear la app en developer.worldcoin.org y pegar su App ID aquí.
-const FLICK_APP_ID = "app_PENDIENTE";
+// FlickMetadata: guarda descripción e imagen como eventos (bloque 33015899)
+const FLICK_METADATA = "0x68ec3f75a43487C9ff124586166ed5a22519d483";
+const META_BLOQUE_0 = 33015899;
+const META_TOPIC = 'MetadataSet(address,address,string,string,bytes)';
+const MAX_IMG_BYTES = 12000;
 
-// Con DEMO en true la app se ve completa con datos de ejemplo, sin tocar la cadena.
-// Al confirmar las firmas reales del contrato (ver FN más abajo), poner false.
-let DEMO = true;
+// ⚠️ PENDIENTE: crear la app en developer.worldcoin.org y pegar su App ID aquí.
+// Va en window a propósito: el módulo de MiniKit al final del archivo lo lee de ahí.
+window.FLICK_APP_ID = "app_PENDIENTE";
+
+// Ya no hace falta modo demo: las firmas reales están confirmadas.
+let DEMO = false;
 
 /* ==================================================================
-   FIRMAS DEL CONTRATO
-   ⚠️ Estas son suposiciones. Hay que reemplazarlas con las firmas
-   reales de FlickFactory.sol / FlickBondingCurve.sol antes de
-   apagar DEMO. Todo lo demás del archivo ya está listo.
+   FIRMAS REALES — confirmadas con `forge inspect methodIdentifiers`
+   OJO: createToken solo recibe nombre y símbolo. La descripción y la
+   imagen no existen on-chain, por eso no están en el formulario.
    ================================================================== */
 const FN = {
-  crearToken:  { sig:'createToken(string,string,string,string)', types:['string','string','string','string'] },
-  comprar:     { sig:'buy(uint256,uint256)',                     types:['uint256','uint256'] },
-  vender:      { sig:'sell(uint256,uint256)',                    types:['uint256','uint256'] },
-  aprobar:     { sig:'approve(address,uint256)',                 types:['address','uint256'] },
+  // FlickFactory
+  crearToken:   { sig:'createToken(string,string)',   types:['string','string'] },
+  totalTokens:  { sig:'totalTokensCreated()',         types:[] },
+  tokenEn:      { sig:'allTokens(uint256)',           types:['uint256'] },
+  curvaDe:      { sig:'curveOf(address)',             types:['address'] },
+  tarifa:       { sig:'creationFee()',                types:[] },
+  yaUsoGratis:  { sig:'hasCreatedFreeToken(address)', types:['address'] },
+  // FlickBondingCurve
+  comprar:      { sig:'buy(uint256,uint256)',         types:['uint256','uint256'] },
+  vender:       { sig:'sell(uint256,uint256)',        types:['uint256','uint256'] },
+  cotizaCompra: { sig:'quoteBuy(uint256)',            types:['uint256'] },
+  cotizaVenta:  { sig:'quoteSell(uint256)',           types:['uint256'] },
+  recaudado:    { sig:'realQuoteRaised()',            types:[] },
+  meta:         { sig:'graduationTarget()',           types:[] },
+  graduado:     { sig:'graduated()',                  types:[] },
+  resQuote:     { sig:'virtualQuoteReserve()',        types:[] },
+  resToken:     { sig:'virtualTokenReserve()',        types:[] },
+  // FlickMetadata
+  fijarMeta:    { sig:'setMetadata(address,string,string,bytes)',
+                  types:['address','string','string','bytes'] },
+  // ERC-20
+  aprobar:      { sig:'approve(address,uint256)',     types:['address','uint256'] },
+  nombre:       { sig:'name()',                       types:[] },
+  simbolo:      { sig:'symbol()',                     types:[] },
+  saldo:        { sig:'balanceOf(address)',            types:['address'] },
 };
+
+// Tolerancia de slippage por defecto (1%).
+const SLIPPAGE = 0.01;
 
 /* ==================================================================
    ESTADO
@@ -554,6 +599,8 @@ const FN = {
 const S = {
   vista:'explorar', wallet:'', username:'', conectado:false,
   tokens:[], filtro:'nuevos', actual:null, lado:'comprar',
+  cargando:true, tarifa:6, yaUsoGratis:false, ultimaCotiza:null,
+  imgBytes:null, imgMime:null,
   ultimoError:null,
 };
 
@@ -687,11 +734,160 @@ const EJEMPLO = [
   {n:'Cohete Barato',    s:'COHETE',  p:0.000505, ch:63.9,  raised:948,  hold:503, vol:6200, grad:false, dest:false, fin:0},
 ];
 
+/* ------------------------------------------------------------------
+   IMAGEN: comprimir en el celular antes de mandarla a la cadena
+   ------------------------------------------------------------------ */
+// Recorta al centro, escala a 128x128 y comprime bajando calidad
+// hasta que quepa en MAX_IMG_BYTES. Devuelve {bytes, mime, dataUrl}.
+async function comprimirImagen(file){
+  const bitmap = await createImageBitmap(file);
+  const L = 128;
+  const lienzo = document.createElement('canvas');
+  lienzo.width = lienzo.height = L;
+  const ctx = lienzo.getContext('2d');
+
+  // recorte cuadrado desde el centro
+  const lado = Math.min(bitmap.width, bitmap.height);
+  const sx = (bitmap.width - lado)/2, sy = (bitmap.height - lado)/2;
+  ctx.drawImage(bitmap, sx, sy, lado, lado, 0, 0, L, L);
+
+  // WebP donde se pueda; JPEG si el navegador no lo soporta (Safari viejo)
+  const formatos = ['image/webp','image/jpeg'];
+  for(const mime of formatos){
+    for(const q of [0.85, 0.7, 0.55, 0.4, 0.25]){
+      const blob = await new Promise(r => lienzo.toBlob(r, mime, q));
+      if(!blob || blob.type !== mime) break;   // formato no soportado
+      if(blob.size <= MAX_IMG_BYTES){
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        return {
+          bytes: '0x' + Array.from(buf).map(b=>b.toString(16).padStart(2,'0')).join(''),
+          mime,
+          dataUrl: 'data:'+mime+';base64,'+btoa(String.fromCharCode(...buf)),
+          peso: blob.size,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function hexADataUrl(hex, mime){
+  const limpio = hex.startsWith('0x') ? hex.slice(2) : hex;
+  const bytes = new Uint8Array(limpio.length/2);
+  for(let i=0;i<bytes.length;i++) bytes[i] = parseInt(limpio.substr(i*2,2),16);
+  let s = '';
+  for(let i=0;i<bytes.length;i+=8192) s += String.fromCharCode(...bytes.subarray(i,i+8192));
+  return 'data:' + (mime||'image/webp') + ';base64,' + btoa(s);
+}
+
+// Lee TODOS los eventos MetadataSet de una sola vez y arma un mapa
+// token -> {desc, img}. El evento más reciente de cada token gana.
+async function cargarMetadatos(){
+  try{
+    const res = await fetch(WORLD_CHAIN_RPC, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
+        address: lc(FLICK_METADATA),
+        topics: [ethers.id(META_TOPIC)],
+        fromBlock: '0x'+META_BLOQUE_0.toString(16),
+        toBlock: 'latest'
+      }]})
+    });
+    const j = await res.json();
+    if(j.error || !j.result) return {};
+    const mapa = {};
+    for(const log of j.result){          // vienen en orden, el último gana
+      try{
+        const token = '0x' + log.topics[1].slice(26);
+        const [desc, mime, img] = ethers.AbiCoder.defaultAbiCoder()
+          .decode(['string','string','bytes'], log.data);
+        mapa[lc(token)] = {
+          desc,
+          img: (img && img !== '0x') ? hexADataUrl(img, mime) : null,
+        };
+      }catch(e){ /* log corrupto, se ignora */ }
+    }
+    return mapa;
+  }catch(e){ console.error('metadatos:', e); return {}; }
+}
+
+/* ------------------------------------------------------------------
+   Lecturas de solo-vista (gratis, sin firma) vía RPC + ethers
+   ------------------------------------------------------------------ */
+async function leer(dir, fn, args, salidas){
+  const data = encodeCall(FN[fn].sig, FN[fn].types, args||[]);
+  const r = await rpcCall(lc(dir), data);
+  if(!r || r === '0x') return null;
+  try{ return ethers.AbiCoder.defaultAbiCoder().decode(salidas, r); }
+  catch(e){ console.error('decode '+fn, e.message); return null; }
+}
+const n18 = v => Number(ethers.formatUnits(v, 18));
+
 async function cargarTokens(){
   if(DEMO){ S.tokens = EJEMPLO.slice(); return; }
-  // Con las firmas reales confirmadas, aquí van las lecturas por RPC
-  // (contador de tokens + datos de cada curva). Ver FN arriba.
-  S.tokens = [];
+  S.cargando = true;
+
+  const tot = await leer(FLICK_FACTORY, 'totalTokens', [], ['uint256']);
+  const n = tot ? Number(tot[0]) : 0;
+  if(!n){ S.tokens = []; S.cargando = false; return; }
+
+  // Los más recientes primero, hasta 30 para no castigar el RPC.
+  const idx = [];
+  for(let i = n-1; i >= 0 && idx.length < 30; i--) idx.push(i);
+
+  const tokens = await Promise.all(idx.map(async i => {
+    try{
+      const a = await leer(FLICK_FACTORY, 'tokenEn', [i], ['address']);
+      if(!a) return null;
+      const dirToken = a[0];
+      const c = await leer(FLICK_FACTORY, 'curvaDe', [dirToken], ['address']);
+      if(!c || /^0x0+$/.test(c[0])) return null;
+      const curva = c[0];
+
+      const [nom, sim, rec, meta, grad, rq, rt] = await Promise.all([
+        leer(dirToken,'nombre',[],['string']),
+        leer(dirToken,'simbolo',[],['string']),
+        leer(curva,'recaudado',[],['uint256']),
+        leer(curva,'meta',[],['uint256']),
+        leer(curva,'graduado',[],['bool']),
+        leer(curva,'resQuote',[],['uint256']),
+        leer(curva,'resToken',[],['uint256']),
+      ]);
+
+      const raised = rec ? n18(rec[0]) : 0;
+      const target = meta && Number(meta[0]) ? n18(meta[0]) : 1500;
+      const precio = (rq && rt && Number(rt[0])) ? n18(rq[0]) / n18(rt[0]) : 0;
+
+      return {
+        n: nom ? nom[0] : 'Token',
+        s: sim ? sim[0] : '???',
+        dir: dirToken, curva,
+        p: precio, ch: 0,
+        raised, target,
+        hold: 0, vol: 0,
+        grad: grad ? !!grad[0] : false,
+        dest: false, fin: 0,
+      };
+    }catch(e){ console.error('token '+i, e); return null; }
+  }));
+
+  S.tokens = tokens.filter(Boolean);
+
+  // descripción e imagen desde FlickMetadata
+  const meta = await cargarMetadatos();
+  S.tokens.forEach(t => {
+    const m = meta[lc(t.dir)];
+    if(m){ t.desc = m.desc; t.img = m.img; }
+  });
+
+  S.cargando = false;
+}
+
+// Avatar: la imagen real si existe, si no la inicial del símbolo
+function avatar(t, clase){
+  return t.img
+    ? `<img class="${clase||'ava'}" src="${t.img}" alt="">`
+    : `<div class="${clase||'ava'}">${(t.s||'?')[0]}</div>`;
 }
 
 /* ==================================================================
@@ -711,23 +907,24 @@ function ir(v){
 }
 
 function pintarTicker(){
-  const acciones = S.tokens.length ? S.tokens : EJEMPLO;
+  const cont = document.querySelector('.ticker');
+  if(!S.tokens.length){ cont.classList.add('hidden'); return; }
+  cont.classList.remove('hidden');
   const items = [];
   for(let i=0;i<14;i++){
-    const t = acciones[i % acciones.length];
-    const compra = Math.random() > .35;
-    const monto = (Math.random()*40+2).toFixed(1);
+    const t = S.tokens[i % S.tokens.length];
     items.push(`<span class="pill">
-      <span class="${compra?'up':'down'}">${compra?'▲':'▼'}</span>
-      <b class="num">${monto} WLD</b>
-      <span style="color:var(--dim)">${t.s}</span></span>`);
+      <b class="num">${t.p ? t.p.toFixed(6) : '—'}</b>
+      <span style="color:var(--dim)">${t.s}</span>
+      <span class="${t.grad?'up':''}">${t.grad?'graduado':''}</span></span>`);
   }
   // duplicado para que el bucle sea continuo
   $('tickerTrack').innerHTML = items.join('') + items.join('');
 }
 
 function tarjetaFuse(t){
-  const pct = Math.min(100, (t.raised/1500)*100);
+  const meta = t.target || 1500;
+  const pct = Math.min(100, (t.raised/meta)*100);
   return `<div class="fuse ${pct>=100?'done':''}">
     <div class="fuse-hd">
       <span>${pct>=100?'Graduado a Uniswap':'Curva de vinculación'}</span>
@@ -755,7 +952,7 @@ function pintarDestacados(){
     return `<button class="feat" onclick="abrirToken('${t.s}')">
       <span class="tag">DESTACADO</span>
       <div class="feat-top">
-        <div class="ava">${t.s[0]}</div>
+        ${avatar(t)}
         <div style="min-width:0">
           <h3>${t.n}</h3><div class="sym">$${t.s}</div>
         </div>
@@ -779,6 +976,11 @@ function pintarLista(){
 
   $('listCount').textContent = l.length ? l.length+(l.length===1?' token':' tokens') : '';
 
+  if(S.cargando){
+    $('lista').innerHTML = `<div class="empty"><div class="spin"></div>
+      <p style="margin-top:14px">Leyendo la cadena…</p></div>`;
+    return;
+  }
   if(!l.length){
     $('lista').innerHTML = `<div class="empty">
       <h3>Nada por aquí todavía</h3>
@@ -790,10 +992,10 @@ function pintarLista(){
   $('lista').innerHTML = l.map(t=>`
     <button class="tk ${t.grad?'grad':''}" onclick="abrirToken('${t.s}')">
       <div class="tk-top">
-        <div class="ava">${t.s[0]}</div>
+        ${avatar(t)}
         <div class="tk-id">
           <h3>${t.n}</h3>
-          <div class="sub">$${t.s} · ${fmt(t.hold,0)} poseedores</div>
+          <div class="sub">$${t.s}${t.desc ? ' · '+t.desc.slice(0,40) : ''}</div>
         </div>
         <div class="tk-pr">
           <div class="p">${t.p.toFixed(6)}</div>
@@ -816,19 +1018,24 @@ function abrirToken(sym){
   const t = S.tokens.find(x=>x.s===sym);
   if(!t) return;
   S.actual = t;
-  $('dAva').textContent = t.s[0];
+  $('dAvaBox').innerHTML = avatar(t);
+  const av = $('dAvaBox').firstElementChild;
+  if(av){ av.style.width = av.style.height = '52px'; av.style.borderRadius = '14px'; }
   $('dName').textContent = t.n;
   $('dSym').textContent = '$'+t.s;
+  const d = $('dDesc');
+  d.textContent = t.desc || '';
+  d.classList.toggle('hidden', !t.desc);
   $('dPrice').textContent = t.p.toFixed(6)+' WLD';
   const chg = $('dChg');
   chg.textContent = (t.ch>=0?'+':'')+t.ch.toFixed(1)+'%';
   chg.className = 'num ' + (t.ch>=0?'up':'down');
   $('dMcap').textContent   = fmt(t.p*1e9)+' WLD';
-  $('dRaised').textContent = fmt(t.raised)+' / 1500';
-  $('dHolders').textContent= fmt(t.hold,0);
-  $('dVol').textContent    = fmt(t.vol)+' WLD';
+  $('dRaised').textContent = fmt(t.raised)+' / '+fmt(t.target||1500,0);
+  $('dHolders').textContent= t.hold ? fmt(t.hold,0) : '—';
+  $('dVol').textContent    = t.vol ? fmt(t.vol)+' WLD' : '—';
 
-  const pct = Math.min(100,(t.raised/1500)*100);
+  const pct = Math.min(100,(t.raised/(t.target||1500))*100);
   $('dPct').textContent  = pct.toFixed(1)+'%';
   $('dFill').style.width = pct+'%';
   $('dSpark').style.left = pct+'%';
@@ -890,64 +1097,167 @@ function setMonto(v, comprando){
   $('amt').value = comprando ? v : v; // en venta: porcentaje del saldo (pendiente saldo real)
   calcRecibe();
 }
+let cotizaTimer = null;
 function calcRecibe(){
   const t = S.actual; if(!t) return;
   const a = parseFloat($('amt').value)||0;
   if(!a){ $('recibe').textContent='—'; return; }
-  $('recibe').textContent = S.lado==='comprar'
-    ? fmt(a/t.p,0)+' '+t.s
-    : fmt(a*t.p,4)+' WLD';
+  $('recibe').textContent = 'calculando…';
+  clearTimeout(cotizaTimer);
+  cotizaTimer = setTimeout(async ()=>{
+    const wei = ethers.parseUnits(String(a), 18);
+    const fn  = S.lado==='comprar' ? 'cotizaCompra' : 'cotizaVenta';
+    const r   = await leer(t.curva, fn, [wei], ['uint256']);
+    if(!r){ $('recibe').textContent = 'no disponible'; return; }
+    const salida = n18(r[0]);
+    S.ultimaCotiza = r[0];
+    $('recibe').textContent = S.lado==='comprar'
+      ? fmt(salida,0)+' '+t.s
+      : fmt(salida,4)+' WLD';
+  }, 350);
 }
 
 async function ejecutarTrade(){
   if(!S.conectado){ return conectarWallet(); }
-  if(DEMO){ toast('Modo demo: falta confirmar las firmas del contrato'); return; }
   const t = S.actual, a = parseFloat($('amt').value)||0;
   if(!a){ toast('Escribe un monto'); return; }
+  if(t.grad){ toast('Este token ya se graduó — se cambia en Uniswap'); return; }
+
   const btn = $('tradeBtn'); btn.disabled = true;
+  const etiqueta = btn.textContent; btn.textContent = 'Enviando…';
   try{
     const wei = ethers.parseUnits(String(a), 18);
-    const txs = [];
-    if(S.lado==='comprar'){
-      txs.push({ to: lc(WLD_TOKEN_ADDRESS),
-                 data: encodeCall(FN.aprobar.sig, FN.aprobar.types, [t.curva, wei]) });
-      txs.push({ to: lc(t.curva),
-                 data: encodeCall(FN.comprar.sig, FN.comprar.types, [wei, 0]) });
-    } else {
-      txs.push({ to: lc(t.curva),
-                 data: encodeCall(FN.vender.sig, FN.vender.types, [wei, 0]) });
-    }
+    const fn  = S.lado==='comprar' ? 'cotizaCompra' : 'cotizaVenta';
+    const q   = await leer(t.curva, fn, [wei], ['uint256']);
+    if(!q){ toast('No se pudo cotizar, intenta de nuevo'); return; }
+    // mínimo aceptable con la tolerancia de slippage
+    const minimo = (BigInt(q[0]) * BigInt(Math.round((1-SLIPPAGE)*10000))) / 10000n;
+
+    // El token que se entrega necesita permiso previo para la curva.
+    const aEntregar = S.lado==='comprar' ? WLD_TOKEN_ADDRESS : t.dir;
+    const txs = [
+      { to: lc(aEntregar), data: encodeCall(FN.aprobar.sig, FN.aprobar.types, [t.curva, wei]) },
+      { to: lc(t.curva),   data: encodeCall(
+          S.lado==='comprar' ? FN.comprar.sig : FN.vender.sig,
+          ['uint256','uint256'], [wei, minimo]) },
+    ];
+
     const ok = await enviarTx(txs);
-    toast(ok ? '✅ Listo' : '❌ '+(S.ultimoError||'falló la transacción').slice(0,70));
-    if(ok){ await cargarTokens(); renderTodo(); }
-  } finally { btn.disabled = false; }
+    if(ok){
+      toast(S.lado==='comprar' ? '✅ Compra hecha' : '✅ Venta hecha');
+      $('amt').value=''; calcRecibe();
+      await cargarTokens(); renderTodo();
+      const fresco = S.tokens.find(x=>x.curva===t.curva);
+      if(fresco) abrirToken(fresco.s);
+    } else {
+      toast('❌ '+(S.ultimoError||'falló la transacción').slice(0,70));
+    }
+  } finally { btn.disabled=false; btn.textContent=etiqueta; }
 }
 
 /* ---------- crear ---------- */
-function pintarTarifa(){
-  $('feeBox').innerHTML = S.conectado
-    ? 'Tu primer token es <b>gratis</b>. Después, cada uno cuesta <b>6 WLD</b>.'
-    : 'Conecta tu wallet para ver tu tarifa. El primer token de cada wallet es <b>gratis</b>.';
+async function pintarTarifa(){
+  const box = $('feeBox');
+  if(!S.conectado){
+    box.innerHTML = 'Conecta tu wallet para ver tu tarifa. El primer token de cada wallet es <b>gratis</b>.';
+    return;
+  }
+  box.textContent = 'Consultando tu tarifa…';
+  const [f, usado] = await Promise.all([
+    leer(FLICK_FACTORY,'tarifa',[],['uint256']),
+    leer(FLICK_FACTORY,'yaUsoGratis',[S.wallet],['bool']),
+  ]);
+  const tarifa = f ? n18(f[0]) : 6;
+  S.tarifa = tarifa;
+  S.yaUsoGratis = usado ? !!usado[0] : false;
+  box.innerHTML = S.yaUsoGratis
+    ? `Crear este token cuesta <b>${fmt(tarifa,0)} WLD</b>.`
+    : `Tu primer token es <b>gratis</b>. Los siguientes costarán ${fmt(tarifa,0)} WLD.`;
 }
+
+async function elegirImagen(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  $('cImgTxt').textContent = 'Comprimiendo…';
+  try{
+    const r = await comprimirImagen(file);
+    if(!r){ toast('No se pudo comprimir esa imagen'); $('cImgTxt').textContent='Elegir de la galería'; return; }
+    S.imgBytes = r.bytes; S.imgMime = r.mime;
+    $('cImgPrev').innerHTML = `<img src="${r.dataUrl}" alt="">`;
+    $('cImgTxt').textContent = 'Listo · ' + (r.peso/1024).toFixed(1) + ' KB';
+  }catch(e){
+    console.error(e);
+    toast('No se pudo leer la imagen');
+    $('cImgTxt').textContent = 'Elegir de la galería';
+  }
+}
+
 async function crearToken(){
   if(!S.conectado){ return conectarWallet(); }
   const n = $('cName').value.trim(), s = $('cSym').value.trim();
+  const desc = $('cDesc').value.trim();
   if(n.length < 2){ toast('Escribe un nombre'); return; }
   if(s.length < 2){ toast('Escribe un símbolo'); return; }
-  if(DEMO){ toast('Modo demo: falta confirmar las firmas del contrato'); return; }
+
   const btn = $('crearBtn'); btn.disabled = true; btn.textContent = 'Creando…';
   try{
-    const data = encodeCall(FN.crearToken.sig, FN.crearToken.types,
-      [n, s, $('cDesc').value.trim(), $('cImg').value.trim()]);
-    const ok = await enviarTx([{ to: lc(FLICK_FACTORY), data }]);
-    if(ok){
-      toast('🚀 Token creado');
-      $('cName').value=$('cSym').value=$('cDesc').value=$('cImg').value='';
-      await cargarTokens(); renderTodo(); ir('explorar');
-    } else {
-      toast('❌ '+(S.ultimoError||'falló la creación').slice(0,70));
+    // 1) crear el token. Si ya usó su token gratis, la factory cobra por
+    //    transferFrom, así que hay que aprobarla en la misma transacción.
+    const txs = [];
+    if(S.yaUsoGratis){
+      const wei = ethers.parseUnits(String(S.tarifa || 6), 18);
+      txs.push({ to: lc(WLD_TOKEN_ADDRESS),
+                 data: encodeCall(FN.aprobar.sig, FN.aprobar.types, [FLICK_FACTORY, wei]) });
     }
+    txs.push({ to: lc(FLICK_FACTORY),
+               data: encodeCall(FN.crearToken.sig, FN.crearToken.types, [n, s]) });
+
+    if(!await enviarTx(txs)){
+      toast('❌ '+(S.ultimoError||'falló la creación').slice(0,70));
+      return;
+    }
+    toast('🚀 Token creado');
+
+    // 2) guardar descripción e imagen. Va aparte porque setMetadata necesita
+    //    la dirección del token, que no existe hasta que la primera confirma.
+    if(desc || S.imgBytes){
+      btn.textContent = 'Guardando datos…';
+      const dir = await buscarTokenNuevo(s);
+      if(!dir){
+        toast('El token quedó creado. La imagen la puedes agregar en un momento.');
+      } else {
+        const okMeta = await enviarTx([{ to: lc(FLICK_METADATA),
+          data: encodeCall(FN.fijarMeta.sig, FN.fijarMeta.types,
+            [dir, desc, S.imgMime || '', S.imgBytes || '0x']) }]);
+        toast(okMeta ? '✅ Imagen y descripción guardadas'
+                     : '⚠️ El token existe, pero sus datos no se guardaron');
+      }
+    }
+
+    // limpiar el formulario
+    $('cName').value = $('cSym').value = $('cDesc').value = '';
+    $('cImgPrev').innerHTML = '🖼️'; $('cImgTxt').textContent = 'Elegir de la galería';
+    S.imgBytes = null; S.imgMime = null;
+
+    await cargarTokens(); renderTodo(); ir('explorar');
   } finally { btn.disabled=false; btn.textContent='Crear token'; }
+}
+
+// Busca el token recién creado por su símbolo, reintentando mientras el RPC
+// se pone al día con el bloque nuevo.
+async function buscarTokenNuevo(simbolo, intentos=8){
+  for(let i=0;i<intentos;i++){
+    const tot = await leer(FLICK_FACTORY,'totalTokens',[],['uint256']);
+    const n = tot ? Number(tot[0]) : 0;
+    for(let k=n-1; k>=0 && k>=n-3; k--){
+      const a = await leer(FLICK_FACTORY,'tokenEn',[k],['address']);
+      if(!a) continue;
+      const sim = await leer(a[0],'simbolo',[],['string']);
+      if(sim && sim[0] === simbolo) return a[0];
+    }
+    await new Promise(r=>setTimeout(r, 1500));
+  }
+  return null;
 }
 
 function destacar(){
@@ -994,6 +1304,7 @@ function renderTodo(){
   if(S.vista==='crear') pintarTarifa();
 }
 (async function init(){
+  renderTodo();              // muestra el spinner de inmediato
   await cargarTokens();
   renderTodo();
   window.addEventListener('resize', ()=>{ if(S.actual && S.vista==='token') dibujarChart(S.actual); });
