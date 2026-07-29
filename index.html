@@ -550,9 +550,9 @@ const META_BLOQUE_0 = 33015899;
 const META_TOPIC = 'MetadataSet(address,address,string,string,bytes)';
 const MAX_IMG_BYTES = 12000;
 
-// ⚠️ PENDIENTE: crear la app en developer.worldcoin.org y pegar su App ID aquí.
+// App ID real de $FLICK en el Developer Portal de World.
 // Va en window a propósito: el módulo de MiniKit al final del archivo lo lee de ahí.
-window.FLICK_APP_ID = "app_PENDIENTE";
+window.FLICK_APP_ID = "app_6c35876337f7e06ef4f69276702292eb";
 
 // Ya no hace falta modo demo: las firmas reales están confirmadas.
 let DEMO = false;
@@ -1314,7 +1314,7 @@ function renderTodo(){
 <script type="module">
   try{
     const { MiniKit } = await import('https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js/+esm');
-    MiniKit.install(window.FLICK_APP_ID || 'app_PENDIENTE');
+    MiniKit.install(window.FLICK_APP_ID);
     window._MiniKit = MiniKit;
     window.__miniKitLoaded = true;
     console.log('MiniKit listo:', MiniKit.isInstalled());
