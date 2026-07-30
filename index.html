@@ -261,6 +261,9 @@ img.ava{object-fit:cover;display:block;background:var(--panel-2)}
 .picker-prev img{width:100%;height:100%;object-fit:cover;display:block}
 .edit-btn{width:100%;padding:11px;border-radius:10px;background:var(--panel-2);
   border:1px solid var(--line);color:var(--lime);font-weight:700;font-size:13px}
+.err-box{margin-top:11px;padding:11px;border-radius:9px;font-size:12px;line-height:1.5;
+  font-family:var(--mono);color:#FFB4B4;background:rgba(255,77,106,.09);
+  border:1px solid rgba(255,77,106,.3);word-break:break-word;user-select:text}
 
 /* ---------- aviso sin auditoría ---------- */
 .warn{margin:14px;padding:12px;border-radius:11px;font-size:12.5px;color:#FFD9A0;
@@ -460,6 +463,7 @@ img.ava{object-fit:cover;display:block;background:var(--panel-2)}
       </button>
     </div>
     <button class="cta" id="eGuardar" onclick="guardarMeta()">Guardar en la cadena</button>
+    <div class="err-box hidden" id="eErr"></div>
   </div>
 
   <div class="trade" style="margin-top:16px">
@@ -506,6 +510,7 @@ img.ava{object-fit:cover;display:block;background:var(--panel-2)}
       <div class="hint">Se recorta cuadrada a 128×128 y se guarda en la cadena. Opcional.</div>
     </div>
     <button class="cta" id="crearBtn" onclick="crearToken()">Crear token</button>
+    <div class="err-box hidden" id="cErr"></div>
     <div class="hint" style="margin-top:10px;text-align:center">
       Si pones descripción o imagen, World App te va a pedir dos firmas: una para crear el token y otra para guardar sus datos.
     </div>
@@ -726,13 +731,27 @@ async function conectarWallet(){
   }
 }
 
+// La consola del navegador no se puede abrir dentro de World App, así que el
+// error real se extrae y se muestra en pantalla.
+function detalleError(r, excepcion){
+  if(excepcion) return 'excepción: ' + (excepcion.message || String(excepcion));
+  if(!r) return 'sin respuesta de MiniKit';
+  const p = r.data || r.finalPayload || r;
+  const partes = [];
+  if(p.status)      partes.push('status=' + p.status);
+  if(p.error_code)  partes.push('code=' + p.error_code);
+  if(p.message)     partes.push('msg=' + p.message);
+  if(p.details)     partes.push('details=' + JSON.stringify(p.details));
+  return partes.length ? partes.join(' ') : JSON.stringify(r).slice(0,200);
+}
+
 async function enviarTx(transacciones){
   if(!S.conectado){ toast('Conecta tu wallet primero'); return false; }
   try{
     if(enWorldApp()){
       const r = await mkRef().sendTransaction({ chainId: CHAIN_ID, transactions: transacciones });
       const ok = r && ((r.data && r.data.status==='success') || (r.finalPayload && r.finalPayload.status!=='error'));
-      if(!ok) S.ultimoError = JSON.stringify(r||{}).slice(0,180);
+      if(!ok) S.ultimoError = detalleError(r, null);
       return !!ok;
     }
     for(const tx of transacciones){
@@ -743,7 +762,7 @@ async function enviarTx(transacciones){
     }
     return true;
   }catch(e){
-    S.ultimoError = e.message || String(e);
+    S.ultimoError = detalleError(null, e);
     return false;
   }
 }
@@ -1274,10 +1293,13 @@ async function guardarMeta(){
   if(!desc && !S.imgBytes){ toast('Pon una descripción o una imagen'); return; }
 
   const btn = $('eGuardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+  const err = $('eErr'); err.classList.add('hidden');
   try{
+    const bytes = S.imgBytes || '0x';
+    const kb = ((bytes.length - 2) / 2 / 1024).toFixed(1);
     const ok = await enviarTx([{ to: lc(FLICK_METADATA),
       data: encodeCall(FN.fijarMeta.sig, FN.fijarMeta.types,
-        [t.dir, desc, S.imgMime || '', S.imgBytes || '0x']) }]);
+        [t.dir, desc, S.imgMime || '', bytes]) }]);
     if(ok){
       toast('✅ Guardado en la cadena');
       S.imgBytes = null; S.imgMime = null;
@@ -1286,7 +1308,10 @@ async function guardarMeta(){
       const fresco = S.tokens.find(x => x.dir === t.dir);
       if(fresco) abrirToken(fresco.s);
     } else {
-      toast('❌ '+(S.ultimoError||'no se pudo guardar').slice(0,70));
+      err.textContent = 'Falló: ' + (S.ultimoError || 'sin detalle') +
+                        ' · imagen ' + kb + ' KB · a ' + FLICK_METADATA;
+      err.classList.remove('hidden');
+      toast('❌ No se pudo guardar', 6000);
     }
   } finally { btn.disabled = false; btn.textContent = 'Guardar en la cadena'; }
 }
@@ -1318,9 +1343,14 @@ async function crearToken(){
                data: encodeCall(FN.crearToken.sig, FN.crearToken.types, [n, s]) });
 
     if(!await enviarTx(txs)){
-      toast('❌ '+(S.ultimoError||'falló la creación').slice(0,70));
+      const ce = $('cErr');
+      ce.textContent = 'Falló: ' + (S.ultimoError || 'sin detalle') +
+                       ' · a ' + FLICK_FACTORY;
+      ce.classList.remove('hidden');
+      toast('❌ No se pudo crear el token', 6000);
       return;
     }
+    $('cErr').classList.add('hidden');
     toast('🚀 Token creado');
 
     // 2) guardar descripción e imagen. Va aparte porque setMetadata necesita
@@ -1395,8 +1425,11 @@ function pintarPerfil(){
   $('pAva').textContent  = (S.username||S.wallet||'F')[0].toUpperCase();
   $('pName').textContent = S.username ? '@'+S.username : 'Anónimo';
   $('pAddr').textContent = corto(S.wallet);
-  $('pStars').textContent= '★☆☆☆☆';
-  $('pBadges').innerHTML = ['🌱 Nuevo por aquí'].map(b=>`<span class="badge">${b}</span>`).join('');
+  const mios = S.tokens.filter(t => t.creador && lc(t.creador) === lc(S.wallet));
+  $('pCreated').textContent = mios.length;
+  $('pStars').textContent = mios.length ? '★☆☆☆☆' : '☆☆☆☆☆';
+  $('pBadges').innerHTML = (mios.length ? ['🚀 Creador'] : ['🌱 Nuevo por aquí'])
+    .map(b=>`<span class="badge">${b}</span>`).join('');
 }
 
 /* ==================================================================
