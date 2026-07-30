@@ -788,10 +788,11 @@ const EJEMPLO = [
 // Dibuja la imagen llenando el cuadro (que luego se recorta en círculo), con
 // un zoom ajustable. zoom=1 es el mínimo que cubre todo el círculo; menos de 1
 // deja ver la imagen completa con espacio alrededor, más de 1 acerca.
-async function comprimirImagen(file, lado, zoom){
+async function comprimirImagen(file, lado, zoom, topeBytes){
   const bitmap = await createImageBitmap(file);
   const L = lado || 128;
   const Z = zoom || 1;
+  const TOPE = Math.min(topeBytes || MAX_IMG_BYTES, MAX_IMG_BYTES);
   const lienzo = document.createElement('canvas');
   lienzo.width = lienzo.height = L;
   const ctx = lienzo.getContext('2d');
@@ -812,7 +813,7 @@ async function comprimirImagen(file, lado, zoom){
     for(const q of [0.92, 0.85, 0.78, 0.7, 0.6, 0.5, 0.4]){
       const blob = await new Promise(r => lienzo.toBlob(r, mime, q));
       if(!blob || blob.type !== mime) break;   // formato no soportado
-      if(blob.size <= MAX_IMG_BYTES){
+      if(blob.size <= TOPE){
         const buf = new Uint8Array(await blob.arrayBuffer());
         return {
           bytes: '0x' + Array.from(buf).map(b=>b.toString(16).padStart(2,'0')).join(''),
@@ -1246,7 +1247,7 @@ async function elegirImagenEn(input, prevId, txtId){
     if($(pre+'ZoomVal')) $(pre+'ZoomVal').textContent = '1.0×';
     if(fila) fila.classList.remove('hidden');
 
-    const r = await comprimirImagen(file, 128, 1);
+    const r = await comprimirImagen(file, 256, 1, presupuestoBytes());
     if(!r){ toast('No se pudo comprimir esa imagen'); $(txtId).textContent='Elegir de la galería'; return; }
     S.imgFile = file; S.imgBytes = r.bytes; S.imgMime = r.mime;
     $(prevId).innerHTML = `<img src="${r.dataUrl}" alt="">`;
@@ -1268,7 +1269,7 @@ function ajustarZoom(pre){
   if(!S.imgFile) return;
   clearTimeout(zoomTimer);
   zoomTimer = setTimeout(async ()=>{
-    const r = await comprimirImagen(S.imgFile, 128, z);
+    const r = await comprimirImagen(S.imgFile, 256, z, presupuestoBytes());
     if(r) $(pre+'ImgPrev').innerHTML = `<img src="${r.dataUrl}" alt="">`;
   }, 120);
 }
@@ -1292,10 +1293,17 @@ function abrirEditor(){
    En vez de adivinar, se estima antes de pedir la firma y se va bajando
    el tamaño de la imagen hasta que la estimación entra en el presupuesto.
    ------------------------------------------------------------------ */
-const GAS_TOPE = 2000000;
-// Con el v3 (~205 gas/byte) un presupuesto de 2M da para unos 9 KB, o sea 192
-// píxeles bien definidos. Se prueba de mayor a menor y se usa el primero que quepa.
-const LADOS = [192, 160, 128, 112, 96, 80, 64];
+// Presupuesto de gas para guardar los metadatos. World App rechaza por encima
+// de cierto punto con gas_limit_exceeded; sabemos que ~9M no pasa. Con el v3
+// (≈210 gas/byte) esto se traduce directo a un presupuesto de BYTES.
+const GAS_TOPE = 4500000;
+const GAS_FIJO = 200000;      // lo que cuesta la llamada sin contar la imagen
+const GAS_POR_BYTE = 215;     // medido: 205-212, se redondea hacia arriba
+const LADOS = [256, 224, 192, 160, 128, 96];
+
+function presupuestoBytes(){
+  return Math.max(1000, Math.floor((GAS_TOPE - GAS_FIJO) / GAS_POR_BYTE));
+}
 
 async function estimarGas(desde, hacia, data){
   try{
@@ -1319,15 +1327,18 @@ async function prepararMetadatos(dirToken, desc){
     const gas = await estimarGas(S.wallet, FLICK_METADATA, data);
     return { data, lado:0, peso:0, gas };
   }
+
+  // El presupuesto se calcula en bytes, no probando tamaño por tamaño: así se
+  // usa la resolución MÁS ALTA que quepa, en vez de bajar de golpe.
+  const tope = presupuestoBytes();
   for(const lado of LADOS){
-    const r = await comprimirImagen(S.imgFile, lado, S.imgZoom || 1);
+    const r = await comprimirImagen(S.imgFile, lado, S.imgZoom || 1, tope);
     if(!r) continue;
     const data = encodeCall(FN.fijarMeta.sig, FN.fijarMeta.types,
       [dirToken, desc, r.mime, r.bytes]);
     const gas = await estimarGas(S.wallet, FLICK_METADATA, data);
-    // si la estimación falla, se confía en el tope de bytes y se sigue bajando
-    if(gas !== null && gas <= GAS_TOPE){
-      return { data, lado, peso:r.peso, gas, dataUrl:r.dataUrl };
+    if(gas === null || gas <= GAS_TOPE){
+      return { data, lado, peso:r.peso, gas, calidad:r.calidad, dataUrl:r.dataUrl };
     }
   }
   return null;
@@ -1352,8 +1363,8 @@ async function guardarMeta(){
     const ok = await enviarTx([{ to: lc(FLICK_METADATA), data: prep.data }]);
     if(ok){
       toast(prep.lado
-        ? `✅ Guardado · ${prep.lado}×${prep.lado}, ${(prep.peso/1024).toFixed(1)} KB`
-        : '✅ Guardado en la cadena');
+        ? `✅ ${prep.lado}×${prep.lado} · ${(prep.peso/1024).toFixed(1)} KB · gas ${prep.gas||'?'}`
+        : '✅ Guardado en la cadena', 6000);
       S.imgFile = null; S.imgBytes = null; S.imgMime = null;
       $('dEditor').classList.add('hidden');
       await cargarTokens(); renderTodo();
