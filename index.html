@@ -1081,7 +1081,22 @@ function abrirToken(sym){
 function dibujarChart(t){
   const c = $('chart'), ctx = c.getContext('2d');
   const w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio||1;
-  c.width = w*dpr; c.height = h*dpr; ctx.scale(dpr,dpr);
+  c.width = w*dpr; c.height = h*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+
+  // Sin nada recaudado no hay historia que graficar: decirlo en vez de
+  // dibujar una línea plana inventada.
+  if(!t.raised){
+    ctx.fillStyle = '#7C8C86';
+    ctx.font = '13px "Space Grotesk", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Sin operaciones todavía', w/2, h/2 - 6);
+    ctx.font = '11px "Space Grotesk", system-ui, sans-serif';
+    ctx.fillStyle = '#4C5A55';
+    ctx.fillText('La curva arranca con la primera compra', w/2, h/2 + 14);
+    return;
+  }
 
   // serie sintética coherente con el cambio de 24h del token
   const n = 48, pts = [];
