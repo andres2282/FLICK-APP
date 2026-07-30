@@ -625,7 +625,7 @@ const SLIPPAGE = 0.01;
 const S = {
   vista:'explorar', wallet:'', username:'', conectado:false,
   tokens:[], filtro:'nuevos', actual:null, lado:'comprar',
-  cargando:true, tarifa:6, yaUsoGratis:false, ultimaCotiza:null,
+  cargando:true, tarifa:6, yaUsoGratis:false, saldoWld:null, ultimaCotiza:null,
   imgBytes:null, imgMime:null,
   ultimoError:null,
 };
@@ -1189,22 +1189,37 @@ async function ejecutarTrade(){
 
 /* ---------- crear ---------- */
 async function pintarTarifa(){
-  const box = $('feeBox');
+  const box = $('feeBox'), btn = $('crearBtn');
+  btn.disabled = false;
   if(!S.conectado){
     box.innerHTML = 'Conecta tu wallet para ver tu tarifa. El primer token de cada wallet es <b>gratis</b>.';
     return;
   }
   box.textContent = 'Consultando tu tarifa…';
-  const [f, usado] = await Promise.all([
+  const [f, usado, bal] = await Promise.all([
     leer(FLICK_FACTORY,'tarifa',[],['uint256']),
     leer(FLICK_FACTORY,'yaUsoGratis',[S.wallet],['bool']),
+    leer(WLD_TOKEN_ADDRESS,'saldo',[S.wallet],['uint256']),
   ]);
-  const tarifa = f ? n18(f[0]) : 6;
-  S.tarifa = tarifa;
-  S.yaUsoGratis = usado ? !!usado[0] : false;
-  box.innerHTML = S.yaUsoGratis
-    ? `Crear este token cuesta <b>${fmt(tarifa,0)} WLD</b>.`
-    : `Tu primer token es <b>gratis</b>. Los siguientes costarán ${fmt(tarifa,0)} WLD.`;
+  S.tarifa = f ? n18(f[0]) : 6;
+  // Si la lectura falla asumimos que SÍ hay que pagar. Aprobar de más es
+  // inofensivo; NO aprobar cuando toca pagar hace fallar la transacción.
+  S.yaUsoGratis = usado ? !!usado[0] : true;
+  S.saldoWld = bal ? n18(bal[0]) : null;
+
+  if(!S.yaUsoGratis){
+    box.innerHTML = `Tu primer token es <b>gratis</b>. Los siguientes costarán ${fmt(S.tarifa,0)} WLD.`;
+    return;
+  }
+  const falta = S.saldoWld !== null && S.saldoWld < S.tarifa;
+  if(falta){
+    box.innerHTML = `Crear este token cuesta <b>${fmt(S.tarifa,0)} WLD</b>, y en tu wallet hay
+      <b>${fmt(S.saldoWld,2)} WLD</b>. Te faltan ${fmt(S.tarifa - S.saldoWld,2)} WLD.`;
+    btn.disabled = true;
+  } else {
+    box.innerHTML = `Crear este token cuesta <b>${fmt(S.tarifa,0)} WLD</b>` +
+      (S.saldoWld !== null ? ` · tienes ${fmt(S.saldoWld,2)} WLD` : '') + '.';
+  }
 }
 
 async function elegirImagenEn(input, prevId, txtId){
@@ -1270,6 +1285,12 @@ async function crearToken(){
 
   const btn = $('crearBtn'); btn.disabled = true; btn.textContent = 'Creando…';
   try{
+    // Refrescar tarifa y saldo justo antes de firmar, no confiar en lo pintado
+    await pintarTarifa();
+    if(S.yaUsoGratis && S.saldoWld !== null && S.saldoWld < S.tarifa){
+      toast(`Te faltan ${fmt(S.tarifa - S.saldoWld,2)} WLD para crear el token`);
+      return;
+    }
     // 1) crear el token. Si ya usó su token gratis, la factory cobra por
     //    transferFrom, así que hay que aprobarla en la misma transacción.
     const txs = [];
