@@ -125,9 +125,10 @@ input,textarea,select{font-family:inherit;font-size:15px}
   background:var(--lime);color:#08110A;font-size:8.5px;font-weight:700;letter-spacing:.1em;
 }
 .feat-top{display:flex;align-items:center;gap:9px;margin-bottom:10px;padding-right:78px}
-.ava{width:38px;height:38px;border-radius:10px;flex:none;display:grid;place-items:center;
-  font-family:var(--display);font-size:16px;color:#08110A;background:var(--lime)}
-img.ava{object-fit:cover;display:block;background:var(--panel-2)}
+.ava{width:52px;height:52px;border-radius:50%;flex:none;display:grid;place-items:center;
+  font-family:var(--display);font-size:20px;color:#08110A;background:var(--lime);overflow:hidden}
+img.ava{object-fit:contain;display:block;
+  background:#0A0F12;border:1px solid rgba(198,255,61,.28)}
 .dt-desc{margin:12px 0 0;font-size:13.5px;color:var(--dim);line-height:1.5}
 .feat h3{margin:0;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .feat .sym{font-family:var(--mono);font-size:11px;color:var(--dim)}
@@ -256,9 +257,9 @@ img.ava{object-fit:cover;display:block;background:var(--panel-2)}
 .fee b{color:var(--lime)}
 .picker{display:flex;align-items:center;gap:11px;width:100%;padding:11px;border-radius:10px;
   background:var(--panel);border:1px dashed var(--line);text-align:left;font-size:13.5px}
-.picker-prev{width:44px;height:44px;border-radius:10px;flex:none;display:grid;place-items:center;
-  font-size:19px;background:var(--panel-2);overflow:hidden}
-.picker-prev img{width:100%;height:100%;object-fit:cover;display:block}
+.picker-prev{width:52px;height:52px;border-radius:50%;flex:none;display:grid;place-items:center;
+  font-size:20px;background:var(--panel-2);overflow:hidden}
+.picker-prev img{width:100%;height:100%;object-fit:contain;display:block}
 .edit-btn{width:100%;padding:11px;border-radius:10px;background:var(--panel-2);
   border:1px solid var(--line);color:var(--lime);font-weight:700;font-size:13px}
 .err-box{margin-top:11px;padding:11px;border-radius:9px;font-size:12px;line-height:1.5;
@@ -271,7 +272,7 @@ img.ava{object-fit:cover;display:block;background:var(--panel-2)}
 
 /* ---------- perfil ---------- */
 .prof{padding:20px 14px;text-align:center}
-.prof .ava{width:74px;height:74px;border-radius:20px;margin:0 auto 12px;font-size:30px}
+.prof .ava{width:82px;height:82px;border-radius:50%;margin:0 auto 12px;font-size:30px}
 .prof h1{margin:0;font-family:var(--display);font-size:20px}
 .prof .addr{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-top:3px}
 .stars{margin-top:9px;font-size:15px;letter-spacing:2px;color:var(--lime)}
@@ -487,12 +488,12 @@ img.ava{object-fit:cover;display:block;background:var(--panel-2)}
         <span id="cImgPrev" class="picker-prev">🖼️</span>
         <span id="cImgTxt">Elegir de la galería</span>
       </button>
-      <div class="hint">Se recorta cuadrada a 128×128 y se guarda en la cadena. Opcional.</div>
+      <div class="hint">Entra completa, sin recortes, y se guarda en la cadena. Opcional.</div>
     </div>
     <button class="cta" id="crearBtn" onclick="crearToken()">Crear token</button>
     <div class="err-box hidden" id="cErr"></div>
     <div class="hint" style="margin-top:10px;text-align:center">
-      Si pones descripción o imagen, World App te va a pedir dos firmas: una para crear el token y otra para guardar sus datos.
+      Todo se guarda en una sola firma: nombre, símbolo, descripción e imagen van en la misma transacción.
     </div>
     <div class="warn" style="margin:14px 0 0">
       Los contratos de $FLICK no han pasado una auditoría externa. Invierte solo lo que estés dispuesto a perder.
@@ -554,10 +555,12 @@ const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 // FlickFactory desplegada en World Chain mainnet (bloque 33012392)
 const FLICK_FACTORY = "0xD02eB27D986a61fc333dd722350a966F57F87E0D";
 
-// FlickMetadataV2: descripción e imagen en storage (bloque 33018837).
-// Se lee con un solo eth_call por token — sin eth_getLogs, sin rangos de bloques.
-const FLICK_METADATA = "0x24040D5EAFa90e9a1781D15F60203ced7C1515c3";
-const MAX_IMG_BYTES = 12000;
+// FlickMetadataV3: la imagen se guarda como CÓDIGO de un contrato (bloque
+// 33024751). Cuesta ~205 gas por byte en vez de ~625, así caben logos nítidos
+// sin pasarse del tope de gas de World App. Misma interfaz que la v2: lo único
+// que cambió aquí es la dirección.
+const FLICK_METADATA = "0xa386413932e32E79239AFa917F86C4e612DD120F";
+const MAX_IMG_BYTES = 24000;
 
 // App ID real de $FLICK en el Developer Portal de World.
 // Va en window a propósito: el módulo de MiniKit al final del archivo lo lee de ahí.
@@ -579,6 +582,7 @@ const FN = {
   curvaDe:      { sig:'curveOf(address)',             types:['address'] },
   tarifa:       { sig:'creationFee()',                types:[] },
   yaUsoGratis:  { sig:'hasCreatedFreeToken(address)', types:['address'] },
+  tokenFactory: { sig:'tokenFactory()',              types:[] },
   // FlickBondingCurve
   comprar:      { sig:'buy(uint256,uint256)',         types:['uint256','uint256'] },
   vender:       { sig:'sell(uint256,uint256)',        types:['uint256','uint256'] },
@@ -764,22 +768,33 @@ const EJEMPLO = [
    ------------------------------------------------------------------ */
 // Recorta al centro, escala a 128x128 y comprime bajando calidad
 // hasta que quepa en MAX_IMG_BYTES. Devuelve {bytes, mime, dataUrl}.
+// Encaja la imagen COMPLETA dentro de un cuadro transparente (no la recorta:
+// los logos anchos perdían los lados). Baja calidad solo hasta donde haga falta.
 async function comprimirImagen(file, lado){
   const bitmap = await createImageBitmap(file);
   const L = lado || 128;
   const lienzo = document.createElement('canvas');
   lienzo.width = lienzo.height = L;
   const ctx = lienzo.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
-  // recorte cuadrado desde el centro
-  const corte = Math.min(bitmap.width, bitmap.height);
-  const sx = (bitmap.width - corte)/2, sy = (bitmap.height - corte)/2;
-  ctx.drawImage(bitmap, sx, sy, corte, corte, 0, 0, L, L);
+  // El avatar es CIRCULAR, así que la imagen se escala para caber dentro del
+  // círculo inscrito, no del cuadrado: si no, a un logo ancho se le cortarían
+  // las puntas. Para un rectángulo w×h dentro de un círculo de diámetro D,
+  // la condición es (s·w)² + (s·h)² ≤ D², o sea s = D / √(w²+h²).
+  const D = L * 0.98;
+  const escala = D / Math.hypot(bitmap.width, bitmap.height);
+  const w = Math.round(bitmap.width * escala);
+  const h = Math.round(bitmap.height * escala);
+  ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height,
+                Math.round((L - w)/2), Math.round((L - h)/2), w, h);
 
-  // WebP donde se pueda; JPEG si el navegador no lo soporta (Safari viejo)
+  // WebP conserva la transparencia. JPEG es el último recurso y la pierde,
+  // así que solo se usa si el navegador no soporta WebP.
   const formatos = ['image/webp','image/jpeg'];
   for(const mime of formatos){
-    for(const q of [0.85, 0.7, 0.55, 0.4, 0.25]){
+    for(const q of [0.92, 0.85, 0.78, 0.7, 0.6, 0.5, 0.4]){
       const blob = await new Promise(r => lienzo.toBlob(r, mime, q));
       if(!blob || blob.type !== mime) break;   // formato no soportado
       if(blob.size <= MAX_IMG_BYTES){
@@ -790,6 +805,7 @@ async function comprimirImagen(file, lado){
           dataUrl: 'data:'+mime+';base64,'+btoa(String.fromCharCode(...buf)),
           peso: blob.size,
           lado: L,
+          calidad: q,
         };
       }
     }
@@ -1014,7 +1030,7 @@ function abrirToken(sym){
   S.actual = t;
   $('dAvaBox').innerHTML = avatar(t);
   const av = $('dAvaBox').firstElementChild;
-  if(av){ av.style.width = av.style.height = '52px'; av.style.borderRadius = '14px'; }
+  if(av){ av.style.width = av.style.height = '76px'; av.style.borderRadius = '50%'; }
   $('dName').textContent = t.n;
   $('dSym').textContent = '$'+t.s;
   const d = $('dDesc');
@@ -1241,7 +1257,9 @@ function abrirEditor(){
    el tamaño de la imagen hasta que la estimación entra en el presupuesto.
    ------------------------------------------------------------------ */
 const GAS_TOPE = 2000000;
-const LADOS = [128, 112, 96, 80, 64, 48];
+// Con el v3 (~205 gas/byte) un presupuesto de 2M da para unos 9 KB, o sea 192
+// píxeles bien definidos. Se prueba de mayor a menor y se usa el primero que quepa.
+const LADOS = [192, 160, 128, 112, 96, 80, 64];
 
 async function estimarGas(desde, hacia, data){
   try{
@@ -1315,6 +1333,35 @@ async function guardarMeta(){
   } finally { btn.disabled = false; btn.textContent = 'Guardar en la cadena'; }
 }
 
+/* ------------------------------------------------------------------
+   FIRMA ÚNICA: la dirección de un contrato creado con CREATE depende solo
+   de quién lo crea y de su nonce, así que se puede calcular ANTES de que
+   exista. Con eso, createToken y setMetadata caben en un mismo lote y World
+   App pide una sola confirmación.
+   Verificado contra los tokens ya creados: TokenFactory con nonce 1 y 2 da
+   exactamente las direcciones de $WOBI y $FMOON.
+   ------------------------------------------------------------------ */
+let _tokenFactory = null;
+
+async function predecirProximoToken(){
+  try{
+    if(!_tokenFactory){
+      const r = await leer(FLICK_FACTORY, 'tokenFactory', [], ['address']);
+      if(!r) return null;
+      _tokenFactory = r[0];
+    }
+    const res = await fetch(WORLD_CHAIN_RPC, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getTransactionCount',
+        params:[lc(_tokenFactory), 'latest'] })
+    });
+    const j = await res.json();
+    if(j.error || !j.result) return null;
+    const nonce = parseInt(j.result, 16);
+    return ethers.getCreateAddress({ from: _tokenFactory, nonce });
+  }catch(e){ console.error('predecir:', e); return null; }
+}
+
 async function crearToken(){
   if(!S.conectado){ return conectarWallet(); }
   const n = $('cName').value.trim(), s = $('cSym').value.trim();
@@ -1322,7 +1369,8 @@ async function crearToken(){
   if(n.length < 2){ toast('Escribe un nombre'); return; }
   if(s.length < 2){ toast('Escribe un símbolo'); return; }
 
-  const btn = $('crearBtn'); btn.disabled = true; btn.textContent = 'Creando…';
+  const btn = $('crearBtn'); btn.disabled = true; btn.textContent = 'Preparando…';
+  const ce = $('cErr'); ce.classList.add('hidden');
   try{
     // Refrescar tarifa y saldo justo antes de firmar, no confiar en lo pintado
     await pintarTarifa();
@@ -1330,8 +1378,11 @@ async function crearToken(){
       toast(`Te faltan ${fmt(S.tarifa - S.saldoWld,2)} WLD para crear el token`);
       return;
     }
-    // 1) crear el token. Si ya usó su token gratis, la factory cobra por
-    //    transferFrom, así que hay que aprobarla en la misma transacción.
+
+    // Un solo lote = una sola firma:
+    //   1) approve de WLD, si el token ya no es gratis
+    //   2) createToken
+    //   3) setMetadata sobre la dirección que TENDRÁ el token
     const txs = [];
     if(S.yaUsoGratis){
       const wei = ethers.parseUnits(String(S.tarifa || 6), 18);
@@ -1341,31 +1392,24 @@ async function crearToken(){
     txs.push({ to: lc(FLICK_FACTORY),
                data: encodeCall(FN.crearToken.sig, FN.crearToken.types, [n, s]) });
 
+    let futuro = null;
+    if(desc || S.imgFile){
+      futuro = await predecirProximoToken();
+      if(futuro){
+        const prep = await prepararMetadatos(futuro, desc);
+        if(prep) txs.push({ to: lc(FLICK_METADATA), data: prep.data });
+      }
+    }
+
+    btn.textContent = 'Creando…';
     if(!await enviarTx(txs)){
-      const ce = $('cErr');
       ce.textContent = 'Falló: ' + (S.ultimoError || 'sin detalle') +
-                       ' · a ' + FLICK_FACTORY;
+        (futuro ? ' · si alguien más creó un token en el mismo instante, vuelve a intentarlo' : '');
       ce.classList.remove('hidden');
       toast('❌ No se pudo crear el token', 6000);
       return;
     }
-    $('cErr').classList.add('hidden');
     toast('🚀 Token creado');
-
-    // 2) guardar descripción e imagen. Va aparte porque setMetadata necesita
-    //    la dirección del token, que no existe hasta que la primera confirma.
-    if(desc || S.imgFile){
-      btn.textContent = 'Guardando datos…';
-      const dir = await buscarTokenNuevo(s);
-      if(!dir){
-        toast('El token quedó creado. La imagen la puedes agregar desde su página.');
-      } else {
-        const prep = await prepararMetadatos(dir, desc);
-        const okMeta = prep && await enviarTx([{ to: lc(FLICK_METADATA), data: prep.data }]);
-        toast(okMeta ? '✅ Imagen y descripción guardadas'
-                     : '⚠️ El token existe. Su imagen se puede agregar desde su página.');
-      }
-    }
 
     // limpiar el formulario
     $('cName').value = $('cSym').value = $('cDesc').value = '';
@@ -1376,22 +1420,6 @@ async function crearToken(){
   } finally { btn.disabled=false; btn.textContent='Crear token'; }
 }
 
-// Busca el token recién creado por su símbolo, reintentando mientras el RPC
-// se pone al día con el bloque nuevo.
-async function buscarTokenNuevo(simbolo, intentos=8){
-  for(let i=0;i<intentos;i++){
-    const tot = await leer(FLICK_FACTORY,'totalTokens',[],['uint256']);
-    const n = tot ? Number(tot[0]) : 0;
-    for(let k=n-1; k>=0 && k>=n-3; k--){
-      const a = await leer(FLICK_FACTORY,'tokenEn',[k],['address']);
-      if(!a) continue;
-      const sim = await leer(a[0],'simbolo',[],['string']);
-      if(sim && sim[0] === simbolo) return a[0];
-    }
-    await new Promise(r=>setTimeout(r, 1500));
-  }
-  return null;
-}
 
 function destacar(){
   if(!S.conectado) return conectarWallet();
