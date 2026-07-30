@@ -611,7 +611,7 @@ const S = {
   vista:'explorar', wallet:'', username:'', conectado:false,
   tokens:[], filtro:'nuevos', actual:null, lado:'comprar',
   cargando:true, tarifa:6, yaUsoGratis:false, saldoWld:null, ultimaCotiza:null,
-  imgBytes:null, imgMime:null,
+  imgFile:null, imgBytes:null, imgMime:null,
   ultimoError:null,
 };
 
@@ -764,17 +764,17 @@ const EJEMPLO = [
    ------------------------------------------------------------------ */
 // Recorta al centro, escala a 128x128 y comprime bajando calidad
 // hasta que quepa en MAX_IMG_BYTES. Devuelve {bytes, mime, dataUrl}.
-async function comprimirImagen(file){
+async function comprimirImagen(file, lado){
   const bitmap = await createImageBitmap(file);
-  const L = 128;
+  const L = lado || 128;
   const lienzo = document.createElement('canvas');
   lienzo.width = lienzo.height = L;
   const ctx = lienzo.getContext('2d');
 
   // recorte cuadrado desde el centro
-  const lado = Math.min(bitmap.width, bitmap.height);
-  const sx = (bitmap.width - lado)/2, sy = (bitmap.height - lado)/2;
-  ctx.drawImage(bitmap, sx, sy, lado, lado, 0, 0, L, L);
+  const corte = Math.min(bitmap.width, bitmap.height);
+  const sx = (bitmap.width - corte)/2, sy = (bitmap.height - corte)/2;
+  ctx.drawImage(bitmap, sx, sy, corte, corte, 0, 0, L, L);
 
   // WebP donde se pueda; JPEG si el navegador no lo soporta (Safari viejo)
   const formatos = ['image/webp','image/jpeg'];
@@ -789,6 +789,7 @@ async function comprimirImagen(file){
           mime,
           dataUrl: 'data:'+mime+';base64,'+btoa(String.fromCharCode(...buf)),
           peso: blob.size,
+          lado: L,
         };
       }
     }
@@ -1205,13 +1206,14 @@ async function pintarTarifa(){
 async function elegirImagenEn(input, prevId, txtId){
   const file = input.files && input.files[0];
   if(!file) return;
-  $(txtId).textContent = 'Comprimiendo…';
+  $(txtId).textContent = 'Preparando…';
   try{
-    const r = await comprimirImagen(file);
+    const r = await comprimirImagen(file, 128);
     if(!r){ toast('No se pudo comprimir esa imagen'); $(txtId).textContent='Elegir de la galería'; return; }
-    S.imgBytes = r.bytes; S.imgMime = r.mime;
+    // se guarda el archivo original: al firmar se recomprime al tamaño que quepa
+    S.imgFile = file; S.imgBytes = r.bytes; S.imgMime = r.mime;
     $(prevId).innerHTML = `<img src="${r.dataUrl}" alt="">`;
-    $(txtId).textContent = 'Listo · ' + (r.peso/1024).toFixed(1) + ' KB';
+    $(txtId).textContent = 'Lista · se ajustará al guardar';
   }catch(e){
     console.error(e);
     toast('No se pudo leer la imagen');
@@ -1223,7 +1225,7 @@ function elegirImagen(input){ return elegirImagenEn(input, 'cImgPrev', 'cImgTxt'
 // Editor de metadatos, solo para el creador del token
 function abrirEditor(){
   const t = S.actual; if(!t) return;
-  S.imgBytes = null; S.imgMime = null;
+  S.imgFile = null; S.imgBytes = null; S.imgMime = null;
   $('eDesc').value = t.desc || '';
   $('eImgPrev').innerHTML = t.img ? `<img src="${t.img}" alt="">` : '🖼️';
   $('eImgTxt').textContent = t.img ? 'Cambiar imagen' : 'Elegir de la galería';
@@ -1233,30 +1235,80 @@ function abrirEditor(){
   $('dEditor').scrollIntoView({behavior:'smooth', block:'center'});
 }
 
+/* ------------------------------------------------------------------
+   GAS: World App rechaza transacciones muy grandes con gas_limit_exceeded.
+   En vez de adivinar, se estima antes de pedir la firma y se va bajando
+   el tamaño de la imagen hasta que la estimación entra en el presupuesto.
+   ------------------------------------------------------------------ */
+const GAS_TOPE = 2000000;
+const LADOS = [128, 112, 96, 80, 64, 48];
+
+async function estimarGas(desde, hacia, data){
+  try{
+    const res = await fetch(WORLD_CHAIN_RPC, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_estimateGas',
+        params:[{ from: lc(desde), to: lc(hacia), data }] })
+    });
+    const j = await res.json();
+    if(j.error || !j.result) return null;
+    return parseInt(j.result, 16);
+  }catch(e){ return null; }
+}
+
+// Arma la llamada a setMetadata con la imagen más grande que quepa.
+// Devuelve {data, lado, peso, gas} o null si ni la más chica entra.
+async function prepararMetadatos(dirToken, desc){
+  // sin imagen: solo texto, siempre entra
+  if(!S.imgFile){
+    const data = encodeCall(FN.fijarMeta.sig, FN.fijarMeta.types, [dirToken, desc, '', '0x']);
+    const gas = await estimarGas(S.wallet, FLICK_METADATA, data);
+    return { data, lado:0, peso:0, gas };
+  }
+  for(const lado of LADOS){
+    const r = await comprimirImagen(S.imgFile, lado);
+    if(!r) continue;
+    const data = encodeCall(FN.fijarMeta.sig, FN.fijarMeta.types,
+      [dirToken, desc, r.mime, r.bytes]);
+    const gas = await estimarGas(S.wallet, FLICK_METADATA, data);
+    // si la estimación falla, se confía en el tope de bytes y se sigue bajando
+    if(gas !== null && gas <= GAS_TOPE){
+      return { data, lado, peso:r.peso, gas, dataUrl:r.dataUrl };
+    }
+  }
+  return null;
+}
+
 async function guardarMeta(){
   const t = S.actual; if(!t) return;
   if(!S.conectado) return conectarWallet();
   const desc = $('eDesc').value.trim();
-  if(!desc && !S.imgBytes){ toast('Pon una descripción o una imagen'); return; }
+  if(!desc && !S.imgFile){ toast('Pon una descripción o una imagen'); return; }
 
-  const btn = $('eGuardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+  const btn = $('eGuardar'); btn.disabled = true; btn.textContent = 'Midiendo…';
   const err = $('eErr'); err.classList.add('hidden');
   try{
-    const bytes = S.imgBytes || '0x';
-    const kb = ((bytes.length - 2) / 2 / 1024).toFixed(1);
-    const ok = await enviarTx([{ to: lc(FLICK_METADATA),
-      data: encodeCall(FN.fijarMeta.sig, FN.fijarMeta.types,
-        [t.dir, desc, S.imgMime || '', bytes]) }]);
+    const prep = await prepararMetadatos(t.dir, desc);
+    if(!prep){
+      err.textContent = 'Ni la versión más chica de la imagen entra en el límite de World App. Prueba con una imagen más simple.';
+      err.classList.remove('hidden');
+      return;
+    }
+    btn.textContent = 'Guardando…';
+    const ok = await enviarTx([{ to: lc(FLICK_METADATA), data: prep.data }]);
     if(ok){
-      toast('✅ Guardado en la cadena');
-      S.imgBytes = null; S.imgMime = null;
+      toast(prep.lado
+        ? `✅ Guardado · ${prep.lado}×${prep.lado}, ${(prep.peso/1024).toFixed(1)} KB`
+        : '✅ Guardado en la cadena');
+      S.imgFile = null; S.imgBytes = null; S.imgMime = null;
       $('dEditor').classList.add('hidden');
       await cargarTokens(); renderTodo();
       const fresco = S.tokens.find(x => x.dir === t.dir);
       if(fresco) abrirToken(fresco.s);
     } else {
       err.textContent = 'Falló: ' + (S.ultimoError || 'sin detalle') +
-                        ' · imagen ' + kb + ' KB · a ' + FLICK_METADATA;
+        ' · ' + (prep.lado ? prep.lado+'×'+prep.lado+', '+(prep.peso/1024).toFixed(1)+' KB' : 'solo texto') +
+        ' · gas estimado ' + (prep.gas || '?');
       err.classList.remove('hidden');
       toast('❌ No se pudo guardar', 6000);
     }
@@ -1302,24 +1354,23 @@ async function crearToken(){
 
     // 2) guardar descripción e imagen. Va aparte porque setMetadata necesita
     //    la dirección del token, que no existe hasta que la primera confirma.
-    if(desc || S.imgBytes){
+    if(desc || S.imgFile){
       btn.textContent = 'Guardando datos…';
       const dir = await buscarTokenNuevo(s);
       if(!dir){
-        toast('El token quedó creado. La imagen la puedes agregar en un momento.');
+        toast('El token quedó creado. La imagen la puedes agregar desde su página.');
       } else {
-        const okMeta = await enviarTx([{ to: lc(FLICK_METADATA),
-          data: encodeCall(FN.fijarMeta.sig, FN.fijarMeta.types,
-            [dir, desc, S.imgMime || '', S.imgBytes || '0x']) }]);
+        const prep = await prepararMetadatos(dir, desc);
+        const okMeta = prep && await enviarTx([{ to: lc(FLICK_METADATA), data: prep.data }]);
         toast(okMeta ? '✅ Imagen y descripción guardadas'
-                     : '⚠️ El token existe, pero sus datos no se guardaron');
+                     : '⚠️ El token existe. Su imagen se puede agregar desde su página.');
       }
     }
 
     // limpiar el formulario
     $('cName').value = $('cSym').value = $('cDesc').value = '';
     $('cImgPrev').innerHTML = '🖼️'; $('cImgTxt').textContent = 'Elegir de la galería';
-    S.imgBytes = null; S.imgMime = null;
+    S.imgFile = null; S.imgBytes = null; S.imgMime = null;
 
     await cargarTokens(); renderTodo(); ir('explorar');
   } finally { btn.disabled=false; btn.textContent='Crear token'; }
