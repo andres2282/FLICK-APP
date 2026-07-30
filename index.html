@@ -368,7 +368,7 @@ img.ava{object-fit:cover;display:block;
 
   <div class="promo">
     <p><b>¿Quieres tu token aquí?</b><br>Destácalo por 2 WLD durante 24 horas.</p>
-    <button onclick="destacar()">Destacar</button>
+    <button onclick="destacar()" style="opacity:.55">Pronto</button>
   </div>
 
   <section class="sec">
@@ -468,6 +468,7 @@ img.ava{object-fit:cover;display:block;
     <div class="chips" id="chips"></div>
     <div class="recv"><span>Recibes aprox.</span><b id="recibe">—</b></div>
     <button class="cta" id="tradeBtn" onclick="ejecutarTrade()">Comprar</button>
+    <div class="err-box hidden" id="tErr"></div>
   </div>
 </main>
 
@@ -1170,6 +1171,7 @@ async function ejecutarTrade(){
 
   const btn = $('tradeBtn'); btn.disabled = true;
   const etiqueta = btn.textContent; btn.textContent = 'Enviando…';
+  const terr = $('tErr'); terr.classList.add('hidden');
   try{
     const wei = ethers.parseUnits(String(a), 18);
     const fn  = S.lado==='comprar' ? 'cotizaCompra' : 'cotizaVenta';
@@ -1195,7 +1197,10 @@ async function ejecutarTrade(){
       const fresco = S.tokens.find(x=>x.curva===t.curva);
       if(fresco) abrirToken(fresco.s);
     } else {
-      toast('❌ '+(S.ultimoError||'falló la transacción').slice(0,70));
+      terr.textContent = 'Falló: ' + (S.ultimoError || 'sin detalle') +
+        ' · curva ' + t.curva + ' · token ' + t.dir;
+      terr.classList.remove('hidden');
+      toast('❌ No se pudo operar', 6000);
     }
   } finally { btn.disabled=false; btn.textContent=etiqueta; }
 }
@@ -1470,8 +1475,7 @@ async function crearToken(){
 
 
 function destacar(){
-  if(!S.conectado) return conectarWallet();
-  toast('Destacar cuesta 2 WLD por 24h — pendiente de conectar');
+  toast('Destacar todavía no está construido — falta su contrato', 5000);
 }
 
 /* ---------- portafolio ---------- */
