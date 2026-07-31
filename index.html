@@ -280,6 +280,16 @@ img.ava{object-fit:cover;display:block;
   border:1px solid rgba(255,77,106,.3);word-break:break-word;user-select:text}
 
 /* ---------- aviso sin auditoría ---------- */
+.panel{margin:0 14px 4px;padding:13px;border-radius:13px;
+  background:var(--panel);border:1px solid var(--line)}
+.panel-tit{font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;
+  margin-bottom:11px}
+.panel-vacio{font-size:12.5px;color:var(--dim);text-align:center;padding:8px 0}
+.pf{margin-top:9px}
+.pf-top{display:flex;justify-content:space-between;font-size:9.5px;letter-spacing:.1em;font-weight:700}
+.pf-num{display:flex;justify-content:space-between;font-family:var(--mono);font-size:14px;margin-top:2px}
+.barra{display:flex;height:5px;border-radius:3px;overflow:hidden;background:var(--red);margin-top:5px}
+.barra i{background:var(--lime);display:block}
 .nota{margin:12px 0 0;font-size:11.5px;line-height:1.55;color:#6B7A75}
 .warn{margin:14px;padding:12px;border-radius:11px;font-size:12.5px;color:#FFD9A0;
   background:rgba(255,170,60,.08);border:1px solid rgba(255,170,60,.28)}
@@ -480,9 +490,11 @@ img.ava{object-fit:cover;display:block;
   <div class="grid2">
     <div class="stat"><span>Cap. de mercado</span><b id="dMcap">—</b></div>
     <div class="stat"><span>Recaudado</span><b id="dRaised">—</b></div>
-    <div class="stat"><span>Poseedores</span><b id="dHolders">—</b></div>
-    <div class="stat"><span>Volumen 24h</span><b id="dVol">—</b></div>
+    <div class="stat"><span>En circulación</span><b id="dCirc">—</b></div>
+    <div class="stat"><span>Desde el lanzamiento</span><b id="dDesde">—</b></div>
   </div>
+  <div id="dPanel" class="panel"></div>
+
   <div style="padding:0 14px">
     <div class="fuse" id="dFuse">
       <div class="fuse-hd"><span>Progreso a graduación</span><b id="dPct">0%</b></div>
@@ -535,7 +547,8 @@ img.ava{object-fit:cover;display:block;
       <span class="u" id="amtU">WLD</span>
     </div>
     <div class="chips" id="chips"></div>
-    <div class="recv"><span>Recibes aprox.</span><b id="recibe">—</b></div>
+    <div class="recv"><span id="dispo"></span><b id="recibe"></b></div>
+    <div class="recv"><span>Recibes aprox.</span><b id="recibe2">—</b></div>
     <button class="cta" id="tradeBtn" onclick="ejecutarTrade()">Comprar</button>
     <p class="nota" style="text-align:center;margin-top:10px">
       Contratos sin auditar. Compra solo lo que estés dispuesto a perder.</p>
@@ -675,9 +688,13 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b22 · aviso proporcionado';
+const BUILD = 'GEK b24 · panel + grafico';
 
-const WORLD_CHAIN_RPC   = "https://worldchain-mainnet.g.alchemy.com/public";
+// RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
+// no se puede leer el historial de operaciones. La clave queda visible en este
+// archivo (es inevitable en una app sin servidor); está restringida por dominio
+// en el panel de Alchemy.
+const WORLD_CHAIN_RPC   = "https://worldchain-mainnet.g.alchemy.com/v2/ppHBVS01TIchyiDYE3zbn";
 const CHAIN_ID          = 480;
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 
@@ -692,6 +709,9 @@ const GEK_METADATA = "0xF44C823c7F6F3faEC65E4148f03750D145406204";
 // Router y lock: direcciones FIJAS, grabadas de forma inmutable en cada token.
 const GEK_ROUTER   = "0x4a7CbBD43fea663dEE20AA6069a13eFDE7efC5Cf";
 const GEK_LOCK     = "0xf10fCE397A2B446F1Abcb343fEeb10e62fd87464";
+// Bloque en que se desplegó el router: desde ahí existe el historial
+const ROUTER_BLOQUE_0 = 33064830;
+const BLOQUES_24H = 43200;   // World Chain hace un bloque cada ~2 s
 const MAX_IMG_BYTES = 24000;
 
 // App ID real de GEK Launchpad en el Developer Portal de World.
@@ -717,6 +737,9 @@ const FN = {
   tarifa:       { sig:'creationFee()',                types:[] },
   yaUsoGratis:  { sig:'hasCreatedFreeToken(address)', types:['address'] },
   tokenFactory: { sig:'tokenFactory()',              types:[] },
+  resIniQuote:  { sig:'defaultInitialVirtualQuoteReserve()', types:[] },
+  resIniToken:  { sig:'defaultInitialVirtualTokenReserve()', types:[] },
+  saldoDe:      { sig:'balanceOf(address)',           types:['address'] },
   // FlickBondingCurve
   // Comprar y vender pasan por el router: la curva tiene dirección nueva en
   // cada token y World App solo deja llamar contratos registrados de antemano.
@@ -981,6 +1004,134 @@ async function leer(dir, fn, args, salidas){
 }
 const n18 = v => Number(ethers.formatUnits(v, 18));
 
+// Precio con el que nace cualquier token: sale de las reservas virtuales
+// iniciales de la factory. Sirve para medir cuánto ha subido de verdad.
+let _precioLanzamiento = null;
+async function precioLanzamiento(){
+  if(_precioLanzamiento !== null) return _precioLanzamiento;
+  const [q, t] = await Promise.all([
+    leer(GEK_FACTORY,'resIniQuote',[],['uint256']),
+    leer(GEK_FACTORY,'resIniToken',[],['uint256']),
+  ]);
+  _precioLanzamiento = (q && t && Number(t[0])) ? n18(q[0]) / n18(t[0]) : 0;
+  return _precioLanzamiento;
+}
+
+
+/* ------------------------------------------------------------------
+   HISTORIAL DE OPERACIONES
+   El router emite un evento por cada compra y venta, CON la wallet real
+   del usuario (la curva vería solo al router). Y como el router es una
+   sola dirección fija para todos los tokens, de ahí sale todo el
+   historial sin necesitar servidor.
+   ------------------------------------------------------------------ */
+const TOPIC_COMPRA = 'Compra(address,address,uint256,uint256)';
+const TOPIC_VENTA  = 'Venta(address,address,uint256,uint256)';
+
+function dirATopic(a){
+  return '0x' + '0'.repeat(24) + lc(a).replace('0x','');
+}
+
+async function traerLogs(topic0, topicCurva, desde, hasta){
+  const res = await fetch(WORLD_CHAIN_RPC, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
+      address: lc(GEK_ROUTER),
+      topics: [ethers.id(topic0), null, topicCurva],
+      fromBlock: '0x'+desde.toString(16),
+      toBlock:   '0x'+hasta.toString(16)
+    }]})
+  });
+  const j = await res.json();
+  if(j.error) throw new Error(j.error.message || 'getLogs');
+  return j.result || [];
+}
+
+async function cargarOperaciones(t){
+  S.ops = null; S.opsError = null;
+  pintarPanel(t);
+  try{
+    const rb = await fetch(WORLD_CHAIN_RPC, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]})
+    });
+    const ultimo = parseInt((await rb.json()).result, 16);
+    const topicCurva = dirATopic(t.curva);
+
+    const TRAMO = 9000, MAX = 40;
+    let ops = [], tramos = 0;
+    for(let desde = ROUTER_BLOQUE_0; desde <= ultimo && tramos < MAX; desde += TRAMO){
+      const hasta = Math.min(desde + TRAMO - 1, ultimo);
+      const [compras, ventas] = await Promise.all([
+        traerLogs(TOPIC_COMPRA, topicCurva, desde, hasta),
+        traerLogs(TOPIC_VENTA,  topicCurva, desde, hasta),
+      ]);
+      tramos++;
+      const dec = ethers.AbiCoder.defaultAbiCoder();
+      for(const l of compras){
+        const [wld, tok] = dec.decode(['uint256','uint256'], l.data);
+        ops.push({ tipo:'compra', usuario:'0x'+l.topics[1].slice(26),
+                   wld:n18(wld), tok:n18(tok), bloque:parseInt(l.blockNumber,16) });
+      }
+      for(const l of ventas){
+        const [tok, wld] = dec.decode(['uint256','uint256'], l.data);
+        ops.push({ tipo:'venta', usuario:'0x'+l.topics[1].slice(26),
+                   wld:n18(wld), tok:n18(tok), bloque:parseInt(l.blockNumber,16) });
+      }
+    }
+    ops.sort((a,b)=>a.bloque-b.bloque);
+    S.ops = { lista: ops, ultimo };
+  }catch(e){
+    S.opsError = e.message || String(e);
+  }
+  if(S.actual && S.actual.dir === t.dir){ pintarPanel(t); dibujarChart(t); }
+}
+
+// Resume las operaciones de las últimas 24 h y las pinta como Ani
+function pintarPanel(t){
+  const cont = $('dPanel');
+  if(!cont) return;
+  if(S.opsError){
+    cont.innerHTML = '<div class="err-box">No se pudo leer el historial: ' + S.opsError + '</div>';
+    return;
+  }
+  if(!S.ops){ cont.innerHTML = '<div class="panel-vacio">Leyendo operaciones…</div>'; return; }
+
+  const corte = S.ops.ultimo - BLOQUES_24H;
+  const recientes = S.ops.lista.filter(o => o.bloque >= corte);
+  if(!recientes.length){
+    cont.innerHTML = '<div class="panel-vacio">Sin operaciones en las últimas 24 horas.</div>';
+    return;
+  }
+
+  const c = recientes.filter(o=>o.tipo==='compra');
+  const v = recientes.filter(o=>o.tipo==='venta');
+  const volC = c.reduce((a,o)=>a+o.wld,0);
+  const volV = v.reduce((a,o)=>a+o.wld,0);
+  const compradores = new Set(c.map(o=>lc(o.usuario))).size;
+  const vendedores  = new Set(v.map(o=>lc(o.usuario))).size;
+
+  const barra = (a,b) => {
+    const tot = a + b || 1;
+    return `<div class="barra"><i style="width:${(a/tot*100).toFixed(1)}%"></i></div>`;
+  };
+  const fila = (et1, n1, et2, n2) => `
+    <div class="pf">
+      <div class="pf-top"><span class="up">${et1}</span><span class="down">${et2}</span></div>
+      <div class="pf-num"><b class="up">${n1}</b><b class="down">${n2}</b></div>
+    </div>`;
+
+  cont.innerHTML = `
+    <div class="panel-tit">Operaciones · últimas 24 h</div>
+    ${fila('COMPRAS', c.length, 'VENTAS', v.length)}
+    ${barra(c.length, v.length)}
+    ${fila('VOL. COMPRA', fmt(volC)+' WLD', 'VOL. VENTA', fmt(volV)+' WLD')}
+    ${barra(volC, volV)}
+    ${fila('COMPRADORES', compradores, 'VENDEDORES', vendedores)}
+    ${barra(compradores, vendedores)}
+  `;
+}
+
 async function cargarTokens(){
   if(DEMO){ S.tokens = EJEMPLO.slice(); return; }
   S.cargando = true;
@@ -990,6 +1141,7 @@ async function cargarTokens(){
   if(!n){ S.tokens = []; S.cargando = false; return; }
 
   // Los más recientes primero, hasta 30 para no castigar el RPC.
+  const base = await precioLanzamiento();
   const idx = [];
   for(let i = n-1; i >= 0 && idx.length < 30; i--) idx.push(i);
 
@@ -1002,7 +1154,7 @@ async function cargarTokens(){
       if(!c || /^0x0+$/.test(c[0])) return null;
       const curva = c[0];
 
-      const [nom, sim, rec, meta, grad, rq, rt, cre, md, com] = await Promise.all([
+      const [nom, sim, rec, meta, grad, rq, rt, cre, md, com, enCurva] = await Promise.all([
         leer(dirToken,'nombre',[],['string']),
         leer(dirToken,'simbolo',[],['string']),
         leer(curva,'recaudado',[],['uint256']),
@@ -1013,6 +1165,7 @@ async function cargarTokens(){
         leer(curva,'creador',[],['address']),
         leer(GEK_METADATA,'leerMeta',[dirToken],['string','string','bytes','uint64']),
         leer(GEK_FACTORY,'comisionDe',[dirToken],['uint16']),
+        leer(dirToken,'saldoDe',[curva],['uint256']),
       ]);
 
       const raised = rec ? n18(rec[0]) : 0;
@@ -1026,7 +1179,9 @@ async function cargarTokens(){
         s: sim ? sim[0] : '???',
         dir: dirToken, curva,
         creador: cre ? cre[0] : '',
-        p: precio, ch: 0,
+        p: precio,
+        ch: base > 0 && precio > 0 ? (precio/base - 1)*100 : 0,
+        enCurva: enCurva ? n18(enCurva[0]) : 0,
         raised, target,
         hold: 0, vol: 0,
         grad: grad ? !!grad[0] : false,
@@ -1223,8 +1378,12 @@ function abrirToken(sym){
   chg.className = 'num ' + (t.ch>=0?'up':'down');
   $('dMcap').textContent   = fmt(t.p*1e9)+' WLD';
   $('dRaised').textContent = fmt(t.raised)+' / '+fmt(t.target||1500,0);
-  $('dHolders').textContent= t.hold ? fmt(t.hold,0) : '—';
-  $('dVol').textContent    = t.vol ? fmt(t.vol)+' WLD' : '—';
+  // Lo que ya salió de la curva a manos de compradores
+  const vendidos = Math.max(0, 1e9 - (t.enCurva || 0));
+  $('dCirc').textContent = vendidos > 0 ? fmt(vendidos,0)+' '+t.s : '0';
+  const dd = $('dDesde');
+  dd.textContent = (t.ch>=0?'+':'') + t.ch.toFixed(1) + '%';
+  dd.className = t.ch > 0 ? 'up' : (t.ch < 0 ? 'down' : '');
 
   const pct = Math.min(100,(t.raised/(t.target||1500))*100);
   $('dPct').textContent  = pct.toFixed(1)+'%';
@@ -1232,6 +1391,16 @@ function abrirToken(sym){
   $('dSpark').style.left = pct+'%';
   $('dFuse').classList.toggle('done', pct>=100);
 
+  // saldo real del usuario en este token: sin esto los botones de % en venta
+  // no pueden saber de qué porcentaje hablan
+  S.saldoToken = 0;
+  if(S.conectado){
+    leer(t.dir,'saldoDe',[S.wallet],['uint256']).then(r=>{
+      S.saldoToken = r ? n18(r[0]) : 0;
+      if(S.actual && S.actual.dir === t.dir) setLado(S.lado);
+    });
+  }
+  cargarOperaciones(t);
   dibujarChart(t);
   setLado('comprar');
   // el editor de metadatos solo lo ve el creador del token
@@ -1248,47 +1417,54 @@ function dibujarChart(t){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,w,h);
 
-  // Sin nada recaudado no hay historia que graficar: decirlo en vez de
-  // dibujar una línea plana inventada.
-  if(!t.raised){
-    ctx.fillStyle = '#7C8C86';
+  const aviso = (l1, l2) => {
+    ctx.fillStyle = '#7C8C86'; ctx.textAlign = 'center';
     ctx.font = '13px "Space Grotesk", system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Sin operaciones todavía', w/2, h/2 - 6);
-    ctx.font = '11px "Space Grotesk", system-ui, sans-serif';
-    ctx.fillStyle = '#4C5A55';
-    ctx.fillText('La curva arranca con la primera compra', w/2, h/2 + 14);
+    ctx.fillText(l1, w/2, h/2 - 6);
+    if(l2){ ctx.font = '11px "Space Grotesk", system-ui, sans-serif';
+            ctx.fillStyle = '#4C5A55'; ctx.fillText(l2, w/2, h/2 + 14); }
+  };
+
+  if(!S.ops){ aviso('Leyendo operaciones…'); return; }
+
+  // precio real de cada operación = WLD movido / tokens movidos
+  const pts = S.ops.lista
+    .filter(o => o.tok > 0)
+    .map(o => ({ p: o.wld / o.tok, compra: o.tipo === 'compra' }));
+
+  if(pts.length < 2){
+    aviso('Sin operaciones todavía', 'La curva arranca con la primera compra');
     return;
   }
 
-  // serie sintética coherente con el cambio de 24h del token
-  const n = 48, pts = [];
-  let v = t.p / (1 + t.ch/100);
-  for(let i=0;i<n;i++){
-    v *= 1 + (t.ch/100)/n + (Math.random()-.5)*0.035;
-    pts.push(v);
-  }
-  pts[n-1] = t.p;
-  const min = Math.min(...pts), max = Math.max(...pts), r = (max-min)||1;
-  const x = i => (i/(n-1))*w;
-  const y = p => h - 10 - ((p-min)/r)*(h-22);
-  const sube = t.ch >= 0;
+  const vals = pts.map(o => o.p);
+  const min = Math.min(...vals), max = Math.max(...vals), r = (max - min) || max || 1;
+  const x = i => (i/(pts.length-1))*w;
+  const y = p => h - 12 - ((p - min)/r)*(h - 26);
+  const sube = vals[vals.length-1] >= vals[0];
   const col = sube ? '#C6FF3D' : '#FF4D6A';
 
   const g = ctx.createLinearGradient(0,0,0,h);
-  g.addColorStop(0, sube?'rgba(198,255,61,.28)':'rgba(255,77,106,.26)');
-  g.addColorStop(1,'rgba(0,0,0,0)');
+  g.addColorStop(0, sube ? 'rgba(198,255,61,.28)' : 'rgba(255,77,106,.26)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.beginPath(); ctx.moveTo(0,h);
-  pts.forEach((p,i)=>ctx.lineTo(x(i),y(p)));
-  ctx.lineTo(w,h); ctx.closePath(); ctx.fillStyle=g; ctx.fill();
+  pts.forEach((o,i)=>ctx.lineTo(x(i), y(o.p)));
+  ctx.lineTo(w,h); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
 
   ctx.beginPath();
-  pts.forEach((p,i)=> i?ctx.lineTo(x(i),y(p)):ctx.moveTo(x(i),y(p)));
-  ctx.strokeStyle=col; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
+  pts.forEach((o,i)=> i ? ctx.lineTo(x(i), y(o.p)) : ctx.moveTo(x(i), y(o.p)));
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
 
-  ctx.beginPath(); ctx.arc(x(n-1),y(pts[n-1]),3.5,0,7); ctx.fillStyle=col; ctx.fill();
+  // un punto por operación: verde compra, rojo venta
+  pts.forEach((o,i)=>{
+    ctx.beginPath(); ctx.arc(x(i), y(o.p), 2.5, 0, 7);
+    ctx.fillStyle = o.compra ? '#C6FF3D' : '#FF4D6A'; ctx.fill();
+  });
+
+  ctx.fillStyle = '#4C5A55'; ctx.textAlign = 'left';
+  ctx.font = '10px "JetBrains Mono", monospace';
+  ctx.fillText(pts.length + ' operaciones', 8, 14);
 }
-
 function setLado(l){
   S.lado = l;
   const comprando = l==='comprar';
@@ -1301,27 +1477,39 @@ function setLado(l){
   b.classList.toggle('sell', !comprando);
   $('chips').innerHTML = (comprando ? [1,5,10,25] : [25,50,75,100])
     .map(v=>`<button onclick="setMonto(${v},${comprando})">${comprando?v+' WLD':v+'%'}</button>`).join('');
+  const disp = $('dispo');
+  if(disp){
+    disp.textContent = comprando ? '' :
+      'Tienes ' + fmt(S.saldoToken||0, 0) + ' ' + (S.actual ? S.actual.s : '');
+  }
   $('amt').value = ''; calcRecibe();
 }
 function setMonto(v, comprando){
-  $('amt').value = comprando ? v : v; // en venta: porcentaje del saldo (pendiente saldo real)
+  if(comprando){
+    $('amt').value = v;                       // en compra el botón es WLD directo
+  } else {
+    // en venta el botón es un PORCENTAJE de lo que tienes
+    const cant = (S.saldoToken || 0) * v / 100;
+    $('amt').value = cant > 0 ? String(Number(cant.toFixed(6))) : '';
+    if(!cant) toast('No tienes tokens de este para vender');
+  }
   calcRecibe();
 }
 let cotizaTimer = null;
 function calcRecibe(){
   const t = S.actual; if(!t) return;
   const a = num($('amt').value);
-  if(!a){ $('recibe').textContent='—'; return; }
-  $('recibe').textContent = 'calculando…';
+  if(!a){ $('recibe2').textContent='—'; return; }
+  $('recibe2').textContent = 'calculando…';
   clearTimeout(cotizaTimer);
   cotizaTimer = setTimeout(async ()=>{
     const wei = ethers.parseUnits(String(a), 18);
     const fn  = S.lado==='comprar' ? 'cotizaCompra' : 'cotizaVenta';
     const r   = await leer(t.curva, fn, [wei], ['uint256','uint256','uint256']);
-    if(!r){ $('recibe').textContent = 'no disponible'; return; }
+    if(!r){ $('recibe2').textContent = 'no disponible'; return; }
     const salida = n18(r[0]);
     S.ultimaCotiza = r[0];
-    $('recibe').textContent = S.lado==='comprar'
+    $('recibe2').textContent = S.lado==='comprar'
       ? fmt(salida,0)+' '+t.s
       : fmt(salida,4)+' WLD';
   }, 350);
