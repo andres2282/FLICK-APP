@@ -275,6 +275,15 @@ img.ava{object-fit:cover;display:block;
 .opt{flex:1;min-width:62px;padding:9px 6px;border-radius:9px;background:var(--panel);
   border:1px solid var(--line);font-size:12.5px;font-weight:700;color:var(--dim)}
 .opt.on{background:var(--lime);border-color:var(--lime);color:#08110A}
+.pill.op-c{border-color:rgba(198,255,61,.45);background:rgba(198,255,61,.10)}
+.pill.op-v{border-color:rgba(255,77,106,.45);background:rgba(255,77,106,.10)}
+.pill .op-t{font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+.pill.op-c .op-t{color:var(--lime)}
+.pill.op-v .op-t{color:var(--red)}
+.ava-mini{width:20px;height:20px;border-radius:50%;flex:none;object-fit:contain;
+  background:#0A0F12;border:1px solid var(--line);display:block}
+.ava-mini.txt{display:grid;place-items:center;font-family:var(--display);
+  font-size:10px;color:#08110A;background:var(--lime);border:0}
 .bloq{margin-top:9px;padding:7px 9px;border-radius:8px;font-size:11.5px;
   background:rgba(198,255,61,.08);border:1px solid rgba(198,255,61,.22);color:var(--lime)}
 .dots-wrap{position:relative;padding:0 14px 4px;display:flex;justify-content:flex-end}
@@ -704,7 +713,7 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b25 - portafolio + menu';
+const BUILD = 'GEK b26 - feed en vivo';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
@@ -1043,9 +1052,6 @@ async function precioLanzamiento(){
    sola dirección fija para todos los tokens, de ahí sale todo el
    historial sin necesitar servidor.
    ------------------------------------------------------------------ */
-const TOPIC_COMPRA = 'Compra(address,address,uint256,uint256)';
-const TOPIC_VENTA  = 'Venta(address,address,uint256,uint256)';
-
 function dirATopic(a){
   return '0x' + '0'.repeat(24) + lc(a).replace('0x','');
 }
@@ -1150,6 +1156,95 @@ function pintarPanel(t){
   `;
 }
 
+
+/* ------------------------------------------------------------------
+   ACTIVIDAD EN VIVO
+   El plan gratis del RPC solo deja pedir 10 bloques por consulta, pero para
+   un feed EN VIVO eso alcanza: se consultan los ultimos bloques cada pocos
+   segundos y se va acumulando. No sirve para historial viejo, si para lo
+   que esta pasando ahora.
+   ------------------------------------------------------------------ */
+const TOPIC_COMPRA = 'Compra(address,address,uint256,uint256)';
+const TOPIC_VENTA  = 'Venta(address,address,uint256,uint256)';
+const VENTANA_BLOQUES = 9;      // tope del plan gratis
+let _ultimoBloqueVisto = 0;
+
+async function bloqueActual(){
+  const r = await fetch(WORLD_CHAIN_RPC, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]})
+  });
+  const j = await r.json();
+  return j.result ? parseInt(j.result,16) : 0;
+}
+
+async function logsDeRango(desde, hasta){
+  const pedir = async (topic) => {
+    const r = await fetch(WORLD_CHAIN_RPC, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
+        address: lc(GEK_ROUTER),
+        topics: [ethers.id(topic)],
+        fromBlock: '0x'+desde.toString(16),
+        toBlock:   '0x'+hasta.toString(16)
+      }]})
+    });
+    const j = await r.json();
+    if(j.error) throw new Error(j.error.message||'getLogs');
+    return j.result || [];
+  };
+  const [compras, ventas] = await Promise.all([pedir(TOPIC_COMPRA), pedir(TOPIC_VENTA)]);
+  const dec = ethers.AbiCoder.defaultAbiCoder();
+  const ops = [];
+  for(const l of compras){
+    const [wld, tok] = dec.decode(['uint256','uint256'], l.data);
+    ops.push({ compra:true, usuario:'0x'+l.topics[1].slice(26), curva:'0x'+l.topics[2].slice(26),
+               wld:n18(wld), tok:n18(tok), bloque:parseInt(l.blockNumber,16) });
+  }
+  for(const l of ventas){
+    const [tok, wld] = dec.decode(['uint256','uint256'], l.data);
+    ops.push({ compra:false, usuario:'0x'+l.topics[1].slice(26), curva:'0x'+l.topics[2].slice(26),
+               wld:n18(wld), tok:n18(tok), bloque:parseInt(l.blockNumber,16) });
+  }
+  return ops;
+}
+
+async function sondearActividad(primeraVez){
+  try{
+    const ahora = await bloqueActual();
+    if(!ahora) return;
+    let desde;
+    if(primeraVez){
+      // al abrir: se barre un poco hacia atras para no arrancar vacio
+      desde = ahora - VENTANA_BLOQUES * 6;
+    } else {
+      desde = _ultimoBloqueVisto ? _ultimoBloqueVisto + 1 : ahora - VENTANA_BLOQUES;
+    }
+    let nuevas = [];
+    for(let d = desde; d <= ahora; d += VENTANA_BLOQUES + 1){
+      const h = Math.min(d + VENTANA_BLOQUES, ahora);
+      nuevas = nuevas.concat(await logsDeRango(d, h));
+    }
+    _ultimoBloqueVisto = ahora;
+    if(nuevas.length){
+      nuevas.sort((a,b)=>b.bloque-a.bloque);
+      S.feed = nuevas.concat(S.feed || []).slice(0, 40);
+      pintarTicker();
+    } else if(primeraVez){
+      pintarTicker();
+    }
+  }catch(e){
+    S.feedError = e.message || String(e);
+    if(primeraVez) pintarTicker();
+  }
+}
+
+function arrancarFeed(){
+  sondearActividad(true);
+  clearInterval(S._feedTimer);
+  S._feedTimer = setInterval(()=>sondearActividad(false), 20000);
+}
+
 async function cargarTokens(){
   if(DEMO){ S.tokens = EJEMPLO.slice(); return; }
   S.cargando = true;
@@ -1240,20 +1335,40 @@ function ir(v){
 
 function pintarTicker(){
   const cont = document.querySelector('.ticker');
-  if(!S.tokens.length){ cont.classList.add('hidden'); return; }
-  cont.classList.remove('hidden');
-  const items = [];
-  for(let i=0;i<14;i++){
-    const t = S.tokens[i % S.tokens.length];
-    items.push(`<span class="pill">
-      <b class="num">${t.p ? t.p.toFixed(6) : '—'}</b>
-      <span style="color:var(--dim)">${t.s}</span>
-      <span class="${t.grad?'up':''}">${t.grad?'graduado':''}</span></span>`);
-  }
-  // duplicado para que el bucle sea continuo
-  $('tickerTrack').innerHTML = items.join('') + items.join('');
-}
+  const track = $('tickerTrack');
+  if(!cont || !track) return;
 
+  const feed = S.feed || [];
+  if(!feed.length){
+    if(S.feedError){
+      cont.classList.remove('hidden');
+      track.innerHTML = '<span class="pill" style="color:var(--dim)">Sin lectura de actividad</span>';
+      return;
+    }
+    cont.classList.add('hidden');
+    return;
+  }
+  cont.classList.remove('hidden');
+
+  // cada operacion: verde si compra, rojo si venta, con el logo del token
+  const items = feed.map(o => {
+    const t = S.tokens.find(x => lc(x.curva) === lc(o.curva));
+    const logo = t && t.img
+      ? `<img class="ava-mini" src="${t.img}" alt="">`
+      : `<span class="ava-mini txt">${t ? t.s[0] : '?'}</span>`;
+    const sim = t ? t.s : '???';
+    return `<span class="pill ${o.compra ? 'op-c' : 'op-v'}"
+                  onclick="${t ? `abrirToken('${t.s}')` : ''}">
+      ${logo}
+      <b>${sim}</b>
+      <span class="op-t">${o.compra ? 'compra' : 'vende'}</span>
+      <b class="num">${fmt(o.wld, 3)} WLD</b>
+    </span>`;
+  }).join('');
+
+  // duplicado para que el desplazamiento sea continuo
+  track.innerHTML = items + items;
+}
 function tarjetaFuse(t){
   const meta = t.target || 1500;
   const pct = Math.min(100, (t.raised/meta)*100);
@@ -1997,6 +2112,7 @@ function renderTodo(){
 }
 (async function init(){
   renderTodo();              // muestra el spinner de inmediato
+  arrancarFeed();            // actividad en vivo, en paralelo
   await cargarTokens();
   renderTodo();
   window.addEventListener('resize', ()=>{ if(S.actual && S.vista==='token') dibujarChart(S.actual); });
