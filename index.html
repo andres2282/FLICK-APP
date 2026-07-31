@@ -280,6 +280,7 @@ img.ava{object-fit:cover;display:block;
   border:1px solid rgba(255,77,106,.3);word-break:break-word;user-select:text}
 
 /* ---------- aviso sin auditoría ---------- */
+.nota{margin:12px 0 0;font-size:11.5px;line-height:1.55;color:#6B7A75}
 .warn{margin:14px;padding:12px;border-radius:11px;font-size:12.5px;color:#FFD9A0;
   background:rgba(255,170,60,.08);border:1px solid rgba(255,170,60,.28)}
 
@@ -529,12 +530,15 @@ img.ava{object-fit:cover;display:block;
       <button id="segSell" onclick="setLado('vender')">Vender</button>
     </div>
     <div class="amt">
-      <input id="amt" type="text" inputmode="decimal" placeholder="0.0" oninput="calcRecibe()">
+      <input id="amt" type="text" inputmode="decimal" placeholder="0.0"
+             oninput="this.value=this.value.replace(',','.'); calcRecibe()">
       <span class="u" id="amtU">WLD</span>
     </div>
     <div class="chips" id="chips"></div>
     <div class="recv"><span>Recibes aprox.</span><b id="recibe">—</b></div>
     <button class="cta" id="tradeBtn" onclick="ejecutarTrade()">Comprar</button>
+    <p class="nota" style="text-align:center;margin-top:10px">
+      Contratos sin auditar. Compra solo lo que estés dispuesto a perder.</p>
     <div class="err-box hidden" id="tErr"></div>
   </div>
 </main>
@@ -575,7 +579,7 @@ img.ava{object-fit:cover;display:block;
       <label>Compra inicial (opcional)</label>
       <div class="amt" style="margin-bottom:0">
         <input id="cBuy" type="text" inputmode="decimal" placeholder="0"
-               oninput="actualizarBloqueo()">
+               oninput="this.value=this.value.replace(',','.'); actualizarBloqueo()">
         <span class="u">WLD</span>
       </div>
       <div class="hint">Máximo 1000 WLD. Lo que compres queda retenido el plazo
@@ -612,11 +616,11 @@ img.ava{object-fit:cover;display:block;
     <button class="cta" id="crearBtn" onclick="crearToken()">Crear token</button>
     <div class="err-box hidden" id="cErr"></div>
     <div class="hint" style="margin-top:10px;text-align:center">
-      Todo se guarda en una sola firma: nombre, símbolo, descripción e imagen van en la misma transacción.
+      Todo se guarda en una sola firma. La imagen entra en tamaño reducido porque comparte transacción con la creación — desde la página del token la puedes reemplazar por una más nítida.
     </div>
-    <div class="warn" style="margin:14px 0 0">
-      Los contratos de GEK Launchpad no han pasado una auditoría externa. Invierte solo lo que estés dispuesto a perder.
-    </div>
+    <p class="nota">Contratos públicos y todavía sin auditar. Lo que la app promete
+      —techo de comisión del 2%, tu compra inicial en custodia— está escrito en el
+      contrato y cualquiera puede comprobarlo en la cadena.</p>
   </div>
 </main>
 
@@ -671,7 +675,7 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b18 · stack nuevo';
+const BUILD = 'GEK b22 · aviso proporcionado';
 
 const WORLD_CHAIN_RPC   = "https://worldchain-mainnet.g.alchemy.com/public";
 const CHAIN_ID          = 480;
@@ -756,6 +760,9 @@ const S = {
    ================================================================== */
 const $ = id => document.getElementById(id);
 const lc = a => String(a).toLowerCase();
+// El teclado en español escribe la coma como separador decimal, y parseFloat
+// devuelve 0 con ella. Cualquier monto que escriba el usuario pasa por aquí.
+const num = v => parseFloat(String(v == null ? '' : v).replace(/\s/g,'').replace(',', '.')) || 0;
 const corto = a => a ? a.slice(0,6)+'…'+a.slice(-4) : '';
 
 function fmt(n,d=2){
@@ -1091,18 +1098,43 @@ function tarjetaFuse(t){
 }
 
 function pintarDestacados(){
-  const d = S.tokens.filter(t=>t.dest);
-  $('featCount').textContent = d.length ? d.length+' activos' : '';
+  const sec = document.querySelector('#featRail').closest('.sec');
+  const titulo = sec.querySelector('h2');
+
+  // Mientras no exista el contrato de destacados de pago, el carrusel se llena
+  // solo con datos reales de la cadena: los que más WLD llevan recaudado. Si
+  // nadie ha recaudado todavía, muestra los más nuevos y lo dice.
+  let d = S.tokens.filter(t=>t.dest);
+  let auto = false;
   if(!d.length){
-    $('featRail').innerHTML = `<div class="feat" style="width:100%;border-style:dashed">
-      <div style="color:var(--dim);font-size:12.5px">Todavía no hay tokens destacados.</div></div>`;
-    return;
+    const conActividad = S.tokens.filter(t => t.raised > 0)
+                                 .sort((a,b) => b.raised - a.raised);
+    if(conActividad.length){
+      d = conActividad.slice(0,5);
+      titulo.textContent = '🔥 Más activos';
+    } else {
+      d = S.tokens.slice(0,5);
+      titulo.textContent = '✨ Recién creados';
+    }
+    auto = true;
+  } else {
+    titulo.textContent = '🔥 Destacados';
   }
-  $('featRail').innerHTML = d.map(t=>{
+
+  sec.classList.toggle('hidden', d.length === 0);
+  $('featCount').textContent = d.length ? d.length + (d.length===1?' token':' tokens') : '';
+  if(!d.length) return;
+  S._featAuto = auto;
+  $('featRail').innerHTML = d.map((t,i)=>{
     const h = Math.max(0, Math.floor((t.fin-Date.now())/3.6e6));
     const m = Math.max(0, Math.floor(((t.fin-Date.now())%3.6e6)/6e4));
+    const auto = S._featAuto;
+    const etiqueta = auto ? '#'+(i+1) : 'DESTACADO';
+    const pie = auto
+      ? `<span class="cd">${t.raised > 0 ? fmt(t.raised)+' WLD recaudados' : 'sin operaciones aún'}</span>`
+      : `<span class="cd">termina en ${h}h ${m}m</span>`;
     return `<button class="feat" onclick="abrirToken('${t.s}')">
-      <span class="tag">DESTACADO</span>
+      <span class="tag">${etiqueta}</span>
       <div class="feat-top">
         ${avatar(t)}
         <div style="min-width:0">
@@ -1111,8 +1143,8 @@ function pintarDestacados(){
       </div>
       ${tarjetaFuse(t)}
       <div class="feat-lo">
-        <span class="num ${t.ch>=0?'up':'down'}">${t.ch>=0?'+':''}${t.ch.toFixed(1)}%</span>
-        <span class="cd">termina en ${h}h ${m}m</span>
+        <span class="num" style="color:var(--lime)">${(t.comision/100||0).toFixed(2)}%</span>
+        ${pie}
       </div>
     </button>`;
   }).join('');
@@ -1122,7 +1154,7 @@ function pintarLista(){
   const q = ($('q').value||'').toLowerCase();
   let l = S.tokens.slice();
   if(S.filtro==='graduados')      l = l.filter(t=>t.grad);
-  else if(S.filtro==='tendencia') l = l.filter(t=>!t.grad).sort((a,b)=>b.vol-a.vol);
+  else if(S.filtro==='tendencia') l = l.filter(t=>!t.grad).sort((a,b)=>b.raised-a.raised);
   else                            l = l.filter(t=>!t.grad);
   if(q) l = l.filter(t=> t.n.toLowerCase().includes(q) || t.s.toLowerCase().includes(q));
 
@@ -1278,7 +1310,7 @@ function setMonto(v, comprando){
 let cotizaTimer = null;
 function calcRecibe(){
   const t = S.actual; if(!t) return;
-  const a = parseFloat($('amt').value)||0;
+  const a = num($('amt').value);
   if(!a){ $('recibe').textContent='—'; return; }
   $('recibe').textContent = 'calculando…';
   clearTimeout(cotizaTimer);
@@ -1297,7 +1329,7 @@ function calcRecibe(){
 
 async function ejecutarTrade(){
   if(!S.conectado){ return conectarWallet(); }
-  const t = S.actual, a = parseFloat($('amt').value)||0;
+  const t = S.actual, a = num($('amt').value);
   if(!a){ toast('Escribe un monto'); return; }
   if(t.grad){ toast('Este token ya se graduó — se cambia en Uniswap'); return; }
 
@@ -1405,7 +1437,7 @@ function elegirImagen(input){ return elegirImagenEn(input, 'cImgPrev', 'cImgTxt'
 // Redibuja la vista previa con el zoom elegido. No toca la cadena.
 let zoomTimer = null;
 function ajustarZoom(pre){
-  const z = parseFloat($(pre+'Zoom').value) || 1;
+  const z = num($(pre+'Zoom').value) || 1;
   S.imgZoom = z;
   $(pre+'ZoomVal').textContent = z.toFixed(1)+'×';
   if(!S.imgFile) return;
@@ -1443,8 +1475,13 @@ const GAS_FIJO = 200000;      // lo que cuesta la llamada sin contar la imagen
 const GAS_POR_BYTE = 215;     // medido: 205-212, se redondea hacia arriba
 const LADOS = [256, 224, 192, 160, 128, 96];
 
-function presupuestoBytes(){
-  return Math.max(1000, Math.floor((GAS_TOPE - GAS_FIJO) / GAS_POR_BYTE));
+// Tope de gas de TODO el lote. World App rechaza por encima de cierto punto:
+// sabemos que 9M no pasa. Se deja margen.
+const GAS_TOPE_LOTE = 6000000;
+
+function presupuestoBytes(gasDisponible){
+  const g = gasDisponible || GAS_TOPE;
+  return Math.max(1000, Math.floor((g - GAS_FIJO) / GAS_POR_BYTE));
 }
 
 async function estimarGas(desde, hacia, data){
@@ -1462,7 +1499,7 @@ async function estimarGas(desde, hacia, data){
 
 // Arma la llamada a setMetadata con la imagen más grande que quepa.
 // Devuelve {data, lado, peso, gas} o null si ni la más chica entra.
-async function prepararMetadatos(dirToken, desc){
+async function prepararMetadatos(dirToken, desc, gasDisponible){
   // sin imagen: solo texto, siempre entra
   if(!S.imgFile){
     const data = encodeCall(FN.fijarMeta.sig, FN.fijarMeta.types, [dirToken, desc, '', '0x']);
@@ -1472,14 +1509,15 @@ async function prepararMetadatos(dirToken, desc){
 
   // El presupuesto se calcula en bytes, no probando tamaño por tamaño: así se
   // usa la resolución MÁS ALTA que quepa, en vez de bajar de golpe.
-  const tope = presupuestoBytes();
+  const gasMax = gasDisponible || GAS_TOPE;
+  const tope = presupuestoBytes(gasMax);
   for(const lado of LADOS){
     const r = await comprimirImagen(S.imgFile, lado, S.imgZoom || 1, tope);
     if(!r) continue;
     const data = encodeCall(FN.fijarMeta.sig, FN.fijarMeta.types,
       [dirToken, desc, r.mime, r.bytes]);
     const gas = await estimarGas(S.wallet, GEK_METADATA, data);
-    if(gas === null || gas <= GAS_TOPE){
+    if(gas === null || gas <= gasMax){
       return { data, lado, peso:r.peso, gas, calidad:r.calidad, dataUrl:r.dataUrl };
     }
   }
@@ -1562,7 +1600,7 @@ function valorOpt(grupo){
 }
 // El plazo solo tiene sentido si hay compra inicial
 function actualizarBloqueo(){
-  const v = parseFloat($('cBuy').value) || 0;
+  const v = num($('cBuy').value);
   $('cLockFld').classList.toggle('hidden', v <= 0);
 }
 
@@ -1589,7 +1627,7 @@ async function crearToken(){
     //   3) setMetadata sobre la dirección que TENDRÁ el token
     // comisión elegida, compra inicial y plazo
     const comision = valorOpt('cFee') || 25;
-    const compra   = parseFloat($('cBuy').value) || 0;
+    const compra   = num($('cBuy').value);
     if(compra > 1000){ toast('La compra inicial no puede pasar de 1000 WLD'); return; }
     const compraWei = compra > 0 ? ethers.parseUnits(String(compra), 18) : 0n;
     const plazo = compra > 0 ? (valorOpt('cLock') || 1) : 0;
@@ -1617,7 +1655,13 @@ async function crearToken(){
     if(desc || S.imgFile){
       futuro = await predecirProximoToken();
       if(futuro){
-        const prep = await prepararMetadatos(futuro, desc);
+        // Crear el token ya consume ~4M de gas por su cuenta (despliega dos
+        // contratos). La imagen tiene que caber en LO QUE SOBRA del lote, no
+        // en el presupuesto completo: por eso al crear entra más chica que al
+        // editarla después desde la página del token.
+        const gasCrear = await estimarGas(S.wallet, GEK_FACTORY, txs[txs.length-1].data);
+        const gasSobrante = Math.max(600000, GAS_TOPE_LOTE - (gasCrear || 4500000) - 300000);
+        const prep = await prepararMetadatos(futuro, desc, gasSobrante);
         if(prep) txs.push({ to: lc(GEK_METADATA), data: prep.data });
       }
     }
