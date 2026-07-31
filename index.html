@@ -134,6 +134,8 @@ input,textarea,select{font-family:inherit;font-size:15px}
 img.ava{object-fit:cover;display:block;
   background:#0A0F12;border:1px solid rgba(198,255,61,.28)}
 .dt-desc{margin:12px 0 0;font-size:13.5px;color:var(--dim);line-height:1.5}
+.dt-fee{margin:8px 0 0;font-size:12px;color:var(--dim)}
+.dt-fee b{color:var(--text);font-weight:700}
 .feat h3{margin:0;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .feat .sym{font-family:var(--mono);font-size:11px;color:var(--dim)}
 .feat-lo{display:flex;align-items:flex-end;justify-content:space-between;margin-top:9px}
@@ -269,6 +271,10 @@ img.ava{object-fit:cover;display:block;
 .zoom-row{display:flex;align-items:center;gap:10px;margin-top:9px}
 .zoom-row span{font-size:11px;color:var(--dim);white-space:nowrap}
 .zoom-row input[type=range]{flex:1;accent-color:var(--lime);background:none}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{flex:1;min-width:62px;padding:9px 6px;border-radius:9px;background:var(--panel);
+  border:1px solid var(--line);font-size:12.5px;font-weight:700;color:var(--dim)}
+.opt.on{background:var(--lime);border-color:var(--lime);color:#08110A}
 .err-box{margin-top:11px;padding:11px;border-radius:9px;font-size:12px;line-height:1.5;
   font-family:var(--mono);color:#FFB4B4;background:rgba(255,77,106,.09);
   border:1px solid rgba(255,77,106,.3);word-break:break-word;user-select:text}
@@ -467,6 +473,7 @@ img.ava{object-fit:cover;display:block;
       <span class="num" id="dChg">—</span>
     </div>
     <p class="dt-desc hidden" id="dDesc"></p>
+    <p class="dt-fee hidden" id="dFee"></p>
   </div>
   <div class="chart"><canvas id="chart"></canvas></div>
   <div class="grid2">
@@ -551,6 +558,42 @@ img.ava{object-fit:cover;display:block;
       <label>Descripción</label>
       <textarea id="cDesc" maxlength="280" placeholder="¿De qué se trata tu token?"></textarea>
     </div>
+
+    <div class="fld">
+      <label>Tu comisión por cada operación</label>
+      <div class="opts" id="cFee">
+        <button class="opt on" data-v="25"  onclick="elegirOpt(this,'cFee')">0.25%</button>
+        <button class="opt"    data-v="50"  onclick="elegirOpt(this,'cFee')">0.5%</button>
+        <button class="opt"    data-v="75"  onclick="elegirOpt(this,'cFee')">0.75%</button>
+        <button class="opt"    data-v="100" onclick="elegirOpt(this,'cFee')">1%</button>
+      </div>
+      <div class="hint">La cobras tú en cada compra y venta de tu token. Queda fija
+        para siempre: nadie la puede subir después, ni tú. Cobrar poco atrae compradores.</div>
+    </div>
+
+    <div class="fld">
+      <label>Compra inicial (opcional)</label>
+      <div class="amt" style="margin-bottom:0">
+        <input id="cBuy" type="text" inputmode="decimal" placeholder="0"
+               oninput="actualizarBloqueo()">
+        <span class="u">WLD</span>
+      </div>
+      <div class="hint">Máximo 1000 WLD. Lo que compres queda retenido el plazo
+        que elijas — no te llega a la wallet hasta que venza.</div>
+    </div>
+
+    <div class="fld hidden" id="cLockFld">
+      <label>Cuánto tiempo lo dejas retenido</label>
+      <div class="opts" id="cLock">
+        <button class="opt on" data-v="1" onclick="elegirOpt(this,'cLock')">24 h</button>
+        <button class="opt"    data-v="2" onclick="elegirOpt(this,'cLock')">7 días</button>
+        <button class="opt"    data-v="3" onclick="elegirOpt(this,'cLock')">15 días</button>
+        <button class="opt"    data-v="4" onclick="elegirOpt(this,'cLock')">1 mes</button>
+        <button class="opt"    data-v="5" onclick="elegirOpt(this,'cLock')">3 meses</button>
+      </div>
+      <div class="hint">Cualquiera puede comprobarlo en la cadena antes de comprar.
+        Cuanto más tiempo, más confianza transmites.</div>
+    </div>
     <div class="fld">
       <label>Imagen</label>
       <input id="cImgFile" type="file" accept="image/*" class="hidden" onchange="elegirImagen(this)">
@@ -628,20 +671,23 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b17 · 30-jul';
+const BUILD = 'GEK b18 · stack nuevo';
 
 const WORLD_CHAIN_RPC   = "https://worldchain-mainnet.g.alchemy.com/public";
 const CHAIN_ID          = 480;
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 
 // FlickFactory desplegada en World Chain mainnet (bloque 33012392)
-const GEK_FACTORY = "0xD02eB27D986a61fc333dd722350a966F57F87E0D";
+const GEK_FACTORY  = "0xE467651bAFAF731535aB68463a51d45Ed98366A8";
 
 // FlickMetadataV3: la imagen se guarda como CÓDIGO de un contrato (bloque
 // 33024751). Cuesta ~205 gas por byte en vez de ~625, así caben logos nítidos
 // sin pasarse del tope de gas de World App. Misma interfaz que la v2: lo único
 // que cambió aquí es la dirección.
-const GEK_METADATA = "0xa386413932e32E79239AFa917F86C4e612DD120F";
+const GEK_METADATA = "0xF44C823c7F6F3faEC65E4148f03750D145406204";
+// Router y lock: direcciones FIJAS, grabadas de forma inmutable en cada token.
+const GEK_ROUTER   = "0x4a7CbBD43fea663dEE20AA6069a13eFDE7efC5Cf";
+const GEK_LOCK     = "0xf10fCE397A2B446F1Abcb343fEeb10e62fd87464";
 const MAX_IMG_BYTES = 24000;
 
 // App ID real de GEK Launchpad en el Developer Portal de World.
@@ -658,7 +704,9 @@ let DEMO = false;
    ================================================================== */
 const FN = {
   // FlickFactory
-  crearToken:   { sig:'createToken(string,string)',   types:['string','string'] },
+  crearToken:   { sig:'createToken(string,string,uint16,uint256,uint8)',
+                  types:['string','string','uint16','uint256','uint8'] },
+  comisionDe:   { sig:'creatorFeeBpsOf(address)',      types:['address'] },
   totalTokens:  { sig:'totalTokensCreated()',         types:[] },
   tokenEn:      { sig:'allTokens(uint256)',           types:['uint256'] },
   curvaDe:      { sig:'curveOf(address)',             types:['address'] },
@@ -666,8 +714,10 @@ const FN = {
   yaUsoGratis:  { sig:'hasCreatedFreeToken(address)', types:['address'] },
   tokenFactory: { sig:'tokenFactory()',              types:[] },
   // FlickBondingCurve
-  comprar:      { sig:'buy(uint256,uint256)',         types:['uint256','uint256'] },
-  vender:       { sig:'sell(uint256,uint256)',        types:['uint256','uint256'] },
+  // Comprar y vender pasan por el router: la curva tiene dirección nueva en
+  // cada token y World App solo deja llamar contratos registrados de antemano.
+  rComprar:     { sig:'comprar(address,uint256,uint256)', types:['address','uint256','uint256'] },
+  rVender:      { sig:'vender(address,uint256,uint256)',  types:['address','uint256','uint256'] },
   cotizaCompra: { sig:'quoteBuy(uint256)',            types:['uint256'] },
   cotizaVenta:  { sig:'quoteSell(uint256)',           types:['uint256'] },
   recaudado:    { sig:'realQuoteRaised()',            types:[] },
@@ -945,7 +995,7 @@ async function cargarTokens(){
       if(!c || /^0x0+$/.test(c[0])) return null;
       const curva = c[0];
 
-      const [nom, sim, rec, meta, grad, rq, rt, cre, md] = await Promise.all([
+      const [nom, sim, rec, meta, grad, rq, rt, cre, md, com] = await Promise.all([
         leer(dirToken,'nombre',[],['string']),
         leer(dirToken,'simbolo',[],['string']),
         leer(curva,'recaudado',[],['uint256']),
@@ -955,6 +1005,7 @@ async function cargarTokens(){
         leer(curva,'resToken',[],['uint256']),
         leer(curva,'creador',[],['address']),
         leer(GEK_METADATA,'leerMeta',[dirToken],['string','string','bytes','uint64']),
+        leer(GEK_FACTORY,'comisionDe',[dirToken],['uint16']),
       ]);
 
       const raised = rec ? n18(rec[0]) : 0;
@@ -972,6 +1023,7 @@ async function cargarTokens(){
         raised, target,
         hold: 0, vol: 0,
         grad: grad ? !!grad[0] : false,
+        comision: com ? Number(com[0]) : 0,
         desc: md ? md[0] : '',
         img: tieneImg ? hexADataUrl(md[2], md[1]) : null,
         dest: false, fin: 0,
@@ -1126,6 +1178,13 @@ function abrirToken(sym){
   const d = $('dDesc');
   d.textContent = t.desc || '';
   d.classList.toggle('hidden', !t.desc);
+  // La comisión se muestra ANTES de comprar, no escondida en la letra chica.
+  const cm = $('dFee');
+  if(t.comision){
+    cm.innerHTML = 'Comisión: <b>' + (t.comision/100).toFixed(2) + '% creador</b>' +
+                   ' + <b>1% plataforma</b>';
+    cm.classList.remove('hidden');
+  } else { cm.classList.add('hidden'); }
   $('dPrice').textContent = t.p.toFixed(6)+' WLD';
   const chg = $('dChg');
   chg.textContent = (t.ch>=0?'+':'')+t.ch.toFixed(1)+'%';
@@ -1253,14 +1312,19 @@ async function ejecutarTrade(){
     // mínimo aceptable con la tolerancia de slippage
     const minimo = (BigInt(q[0]) * BigInt(Math.round((1-SLIPPAGE)*10000))) / 10000n;
 
-    // El token que se entrega necesita permiso previo para la curva.
-    const aEntregar = S.lado==='comprar' ? WLD_TOKEN_ADDRESS : t.dir;
-    const txs = [
-      { to: lc(aEntregar), data: encodeCall(FN.aprobar.sig, FN.aprobar.types, [t.curva, wei]) },
-      { to: lc(t.curva),   data: encodeCall(
-          S.lado==='comprar' ? FN.comprar.sig : FN.vender.sig,
-          ['uint256','uint256'], [wei, minimo]) },
-    ];
+    // Todo pasa por el router, que es dirección fija y sí se puede registrar
+    // en World App. Al comprar hay que aprobarle el WLD; al vender no hace
+    // falta approve, porque los tokens de GEK le dan permiso permanente.
+    const txs = [];
+    if(S.lado === 'comprar'){
+      txs.push({ to: lc(WLD_TOKEN_ADDRESS),
+                 data: encodeCall(FN.aprobar.sig, FN.aprobar.types, [GEK_ROUTER, wei]) });
+      txs.push({ to: lc(GEK_ROUTER),
+                 data: encodeCall(FN.rComprar.sig, FN.rComprar.types, [t.curva, wei, minimo]) });
+    } else {
+      txs.push({ to: lc(GEK_ROUTER),
+                 data: encodeCall(FN.rVender.sig, FN.rVender.types, [t.curva, wei, minimo]) });
+    }
 
     const ok = await enviarTx(txs);
     if(ok){
@@ -1271,7 +1335,7 @@ async function ejecutarTrade(){
       if(fresco) abrirToken(fresco.s);
     } else {
       terr.textContent = 'Falló: ' + (S.ultimoError || 'sin detalle') +
-        ' · curva ' + t.curva + ' · token ' + t.dir;
+        ' · router ' + GEK_ROUTER + ' · curva ' + t.curva;
       terr.classList.remove('hidden');
       toast('❌ No se pudo operar', 6000);
     }
@@ -1487,6 +1551,21 @@ async function predecirProximoToken(){
   }catch(e){ console.error('predecir:', e); return null; }
 }
 
+// Selectores de opción (comisión, plazo). Guarda el valor en data-v.
+function elegirOpt(btn, grupo){
+  document.querySelectorAll('#'+grupo+' .opt').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+}
+function valorOpt(grupo){
+  const el = document.querySelector('#'+grupo+' .opt.on');
+  return el ? parseInt(el.dataset.v, 10) : 0;
+}
+// El plazo solo tiene sentido si hay compra inicial
+function actualizarBloqueo(){
+  const v = parseFloat($('cBuy').value) || 0;
+  $('cLockFld').classList.toggle('hidden', v <= 0);
+}
+
 async function crearToken(){
   if(!S.conectado){ return conectarWallet(); }
   const n = $('cName').value.trim(), s = $('cSym').value.trim();
@@ -1508,14 +1587,31 @@ async function crearToken(){
     //   1) approve de WLD, si el token ya no es gratis
     //   2) createToken
     //   3) setMetadata sobre la dirección que TENDRÁ el token
+    // comisión elegida, compra inicial y plazo
+    const comision = valorOpt('cFee') || 25;
+    const compra   = parseFloat($('cBuy').value) || 0;
+    if(compra > 1000){ toast('La compra inicial no puede pasar de 1000 WLD'); return; }
+    const compraWei = compra > 0 ? ethers.parseUnits(String(compra), 18) : 0n;
+    const plazo = compra > 0 ? (valorOpt('cLock') || 1) : 0;
+
+    // el approve tiene que cubrir la tarifa de creación MÁS la compra inicial
+    const tarifaWei = S.yaUsoGratis ? ethers.parseUnits(String(S.tarifa || 6), 18) : 0n;
+    const totalWei = tarifaWei + compraWei;
+
+    if(totalWei > 0n && S.saldoWld !== null &&
+       ethers.parseUnits(String(S.saldoWld), 18) < totalWei){
+      toast('No te alcanza el WLD para la tarifa más la compra inicial');
+      return;
+    }
+
     const txs = [];
-    if(S.yaUsoGratis){
-      const wei = ethers.parseUnits(String(S.tarifa || 6), 18);
+    if(totalWei > 0n){
       txs.push({ to: lc(WLD_TOKEN_ADDRESS),
-                 data: encodeCall(FN.aprobar.sig, FN.aprobar.types, [GEK_FACTORY, wei]) });
+                 data: encodeCall(FN.aprobar.sig, FN.aprobar.types, [GEK_FACTORY, totalWei]) });
     }
     txs.push({ to: lc(GEK_FACTORY),
-               data: encodeCall(FN.crearToken.sig, FN.crearToken.types, [n, s]) });
+               data: encodeCall(FN.crearToken.sig, FN.crearToken.types,
+                 [n, s, comision, compraWei, plazo]) });
 
     let futuro = null;
     if(desc || S.imgFile){
@@ -1537,7 +1633,8 @@ async function crearToken(){
     toast('🚀 Token creado');
 
     // limpiar el formulario
-    $('cName').value = $('cSym').value = $('cDesc').value = '';
+    $('cName').value = $('cSym').value = $('cDesc').value = $('cBuy').value = '';
+    $('cLockFld').classList.add('hidden');
     $('cImgPrev').innerHTML = '🖼️'; $('cImgTxt').textContent = 'Elegir de la galería';
     $('cZoomRow').classList.add('hidden'); S.imgZoom = 1;
     S.imgFile = null; S.imgBytes = null; S.imgMime = null;
