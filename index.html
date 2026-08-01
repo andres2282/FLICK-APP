@@ -302,7 +302,32 @@ img.ava{object-fit:cover;display:block;
   font-family:var(--mono);color:#FFB4B4;background:rgba(255,77,106,.09);
   border:1px solid rgba(255,77,106,.3);word-break:break-word;user-select:text}
 
-
+/* ---------- aviso sin auditoría ---------- */
+.tabs2{display:flex;gap:6px;margin:0 14px 8px}
+.tab2{flex:1;padding:9px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);
+  font-size:12.5px;font-weight:700;color:var(--dim)}
+.tab2.on{background:var(--lime);border-color:var(--lime);color:#08110A}
+.op-row{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--line)}
+.op-row:last-child{border-bottom:0}
+.op-row .quien{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.op-row .cuanto{font-family:var(--mono);font-size:12.5px;font-weight:700}
+.op-tag{font-size:9.5px;font-weight:700;letter-spacing:.08em;padding:3px 7px;border-radius:6px}
+.op-tag.c{color:var(--lime);background:rgba(198,255,61,.12)}
+.op-tag.v{color:var(--red);background:rgba(255,77,106,.12)}
+.hold-pos{width:22px;font-family:var(--mono);font-size:11px;color:var(--dim);flex:none}
+.panel{margin:0 14px 4px;padding:13px;border-radius:13px;
+  background:var(--panel);border:1px solid var(--line)}
+.panel-tit{font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;
+  margin-bottom:11px}
+.panel-vacio{font-size:12.5px;color:var(--dim);text-align:center;padding:8px 0}
+.pf{margin-top:9px}
+.pf-top{display:flex;justify-content:space-between;font-size:9.5px;letter-spacing:.1em;font-weight:700}
+.pf-num{display:flex;justify-content:space-between;font-family:var(--mono);font-size:14px;margin-top:2px}
+.barra{display:flex;height:5px;border-radius:3px;overflow:hidden;background:var(--red);margin-top:5px}
+.barra i{background:var(--lime);display:block}
+.nota{margin:12px 0 0;font-size:11.5px;line-height:1.55;color:#6B7A75}
+.warn{margin:14px;padding:12px;border-radius:11px;font-size:12.5px;color:#FFD9A0;
+  background:rgba(255,170,60,.08);border:1px solid rgba(255,170,60,.28)}
 
 /* ---------- perfil ---------- */
 .prof{padding:20px 14px;text-align:center}
@@ -650,9 +675,7 @@ img.ava{object-fit:cover;display:block;
     <div class="hint" style="margin-top:10px;text-align:center">
       Todo se guarda en una sola firma. La imagen entra en tamaño reducido porque comparte transacción con la creación — desde la página del token la puedes reemplazar por una más nítida.
     </div>
-    <p class="nota">Contratos públicos y todavía sin auditar. Lo que la app promete
-      —techo de comisión del 2%, tu compra inicial en custodia— está escrito en el
-      contrato y cualquiera puede comprobarlo en la cadena.</p>
+    <p class="nota">.</p>
   </div>
 </main>
 
@@ -707,7 +730,7 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b31 diag';
+const BUILD = 'GEK b32';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
@@ -1318,6 +1341,81 @@ function panelPoseedores(t, cont){
           ${(cant/total*100).toFixed(1)}%</span>
       </div>`).join('') +
     '<p class="nota" style="margin-top:10px">Calculado con las operaciones hechas en GEK. Una transferencia directa entre wallets no se refleja aqui.</p>';
+}
+
+/* ------------------------------------------------------------------
+   ACTIVIDAD EN VIVO
+   El router emite un evento por cada compra y venta, con la wallet real del
+   usuario. Como es una sola direccion fija para todos los tokens, de ahi sale
+   el feed sin necesitar servidor.
+   ------------------------------------------------------------------ */
+const TOPIC_COMPRA = 'Compra(address,address,uint256,uint256)';
+const TOPIC_VENTA  = 'Venta(address,address,uint256,uint256)';
+const VENTANA_BLOQUES = 2000;
+let _ultimoBloqueVisto = 0;
+
+async function bloqueActual(){
+  const j = await rpcFetch({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]});
+  return j.result ? parseInt(j.result,16) : 0;
+}
+
+async function logsDeRango(desde, hasta){
+  const pedir = async (topic) => {
+    const j = await rpcFetch({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
+      address: lc(GEK_ROUTER),
+      topics: [ethers.id(topic)],
+      fromBlock: '0x'+desde.toString(16),
+      toBlock:   '0x'+hasta.toString(16)
+    }]});
+    if(j.error) throw new Error(j.error.message||'getLogs');
+    return j.result || [];
+  };
+  const [compras, ventas] = await Promise.all([pedir(TOPIC_COMPRA), pedir(TOPIC_VENTA)]);
+  const dec = ethers.AbiCoder.defaultAbiCoder();
+  const ops = [];
+  for(const l of compras){
+    const [wld, tok] = dec.decode(['uint256','uint256'], l.data);
+    ops.push({ compra:true, usuario:'0x'+l.topics[1].slice(26), curva:'0x'+l.topics[2].slice(26),
+               wld:n18(wld), tok:n18(tok), bloque:parseInt(l.blockNumber,16) });
+  }
+  for(const l of ventas){
+    const [tok, wld] = dec.decode(['uint256','uint256'], l.data);
+    ops.push({ compra:false, usuario:'0x'+l.topics[1].slice(26), curva:'0x'+l.topics[2].slice(26),
+               wld:n18(wld), tok:n18(tok), bloque:parseInt(l.blockNumber,16) });
+  }
+  return ops;
+}
+
+async function sondearActividad(primeraVez){
+  try{
+    const ahora = await bloqueActual();
+    if(!ahora) return;
+    let desde = primeraVez
+      ? ahora - VENTANA_BLOQUES * 3
+      : (_ultimoBloqueVisto ? _ultimoBloqueVisto + 1 : ahora - VENTANA_BLOQUES);
+    let nuevas = [];
+    for(let d = desde; d <= ahora; d += VENTANA_BLOQUES){
+      const h = Math.min(d + VENTANA_BLOQUES - 1, ahora);
+      nuevas = nuevas.concat(await logsDeRango(d, h));
+    }
+    _ultimoBloqueVisto = ahora;
+    if(nuevas.length){
+      nuevas.sort((a,b)=>b.bloque-a.bloque);
+      S.feed = nuevas.concat(S.feed || []).slice(0, 40);
+    }
+    S.feedError = null;
+    pintarTicker();
+  }catch(e){
+    S.feedError = e.message || String(e);
+    log('feed: ' + S.feedError, true);
+    if(primeraVez) pintarTicker();
+  }
+}
+
+function arrancarFeed(){
+  sondearActividad(true);
+  clearInterval(S._feedTimer);
+  S._feedTimer = setInterval(()=>sondearActividad(false), 20000);
 }
 
 async function cargarTokens(){
@@ -2263,7 +2361,7 @@ function renderTodo(){
   renderTodo();              // muestra el spinner de inmediato
   log('arranque ' + BUILD);
   await elegirRPC();         // primero, un RPC que de verdad responda
-  arrancarFeed();            // actividad en vivo, en paralelo
+  try{ arrancarFeed(); }catch(e){ log('feed no arranco: ' + e.message, true); }
   await cargarTokens();
   log('listo');
   renderTodo();
