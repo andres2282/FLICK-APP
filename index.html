@@ -288,6 +288,12 @@ img.ava{object-fit:cover;display:block;
 .pf-label{margin:0;font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
 .pf-total{margin:4px 0 0;font-family:var(--mono);font-size:36px;font-weight:700;letter-spacing:-.02em}
 .pf-sub{margin:5px 0 0;font-size:12px;color:var(--dim)}
+.diag{margin-top:12px;padding:12px;border-radius:10px;background:#0B0F12;
+  border:1px solid var(--line);font-family:var(--mono);font-size:10.5px;line-height:1.7;
+  white-space:pre-wrap;word-break:break-word;color:var(--dim);user-select:text}
+.diag b{color:var(--lime)} .diag i{color:#FFB4B4;font-style:normal}
+.edit-btn{width:100%;padding:11px;border-radius:10px;background:var(--panel-2);
+  border:1px solid var(--line);color:var(--lime);font-weight:700;font-size:13px}
 .grupo{font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;
   margin:16px 0 8px}
 .bloq{margin-top:9px;padding:7px 9px;border-radius:8px;font-size:11.5px;
@@ -715,6 +721,10 @@ img.ava{object-fit:cover;display:block;
   </div>
   <p style="text-align:center;font-family:var(--mono);font-size:10.5px;
             color:#3E4A46;margin:6px 0 0" id="pBuild"></p>
+  <div style="padding:14px">
+    <button class="edit-btn" onclick="diagnostico()">&#128295; Probar conexión</button>
+    <div id="diag" class="diag hidden"></div>
+  </div>
   <div style="height:20px"></div>
 </main>
 
@@ -739,7 +749,7 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b34';
+const BUILD = 'GEK b36';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
@@ -754,6 +764,10 @@ const RPCS = [
   "https://480.rpc.thirdweb.com",
 ];
 let   WORLD_CHAIN_RPC = RPCS[0];
+// eth_getLogs necesita un RPC que permita rangos grandes de bloques. Alchemy en
+// plan gratis solo deja 10; drpc deja 1000. Por eso el historial usa su propio
+// RPC, elegido probando una consulta real.
+let   RPC_LOGS = null;
 let   _rpcFallos = 0;
 
 // Prueba todos y se queda con el primero que responda un numero de bloque.
@@ -1376,16 +1390,56 @@ async function bloqueActual(){
   return j.result ? parseInt(j.result,16) : 0;
 }
 
+// Prueba cada RPC con una consulta de logs de verdad y se queda con el primero
+// que acepte el rango. Se hace una sola vez.
+async function elegirRpcLogs(){
+  if(RPC_LOGS) return RPC_LOGS;
+  const ahora = await bloqueActual();
+  const desde = Math.max(ROUTER_BLOQUE_0, ahora - VENTANA_BLOQUES + 1);
+  for(const url of RPCS){
+    try{
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), 8000);
+      const r = await fetch(url, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
+          address: lc(GEK_ROUTER),
+          fromBlock: '0x'+desde.toString(16),
+          toBlock:   '0x'+ahora.toString(16)
+        }]}),
+        signal: ctrl.signal
+      });
+      clearTimeout(t);
+      const j = await r.json();
+      if(!r.ok || j.error) throw new Error((j.error && j.error.message) || ('HTTP '+r.status));
+      RPC_LOGS = url;
+      log('historial vía ' + url.split('/')[2]);
+      return RPC_LOGS;
+    }catch(e){ /* siguiente */ }
+  }
+  throw new Error('ningún RPC acepta consultas de historial');
+}
+
 async function logsDeRango(desde, hasta){
+  const url = await elegirRpcLogs();
   const pedir = async (topic) => {
-    const j = await rpcFetch({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
-      address: lc(GEK_ROUTER),
-      topics: [ethers.id(topic)],
-      fromBlock: '0x'+desde.toString(16),
-      toBlock:   '0x'+hasta.toString(16)
-    }]});
-    if(j.error) throw new Error(j.error.message||'getLogs');
-    return j.result || [];
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), 12000);
+    try{
+      const r = await fetch(url, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
+          address: lc(GEK_ROUTER),
+          topics: [ethers.id(topic)],
+          fromBlock: '0x'+desde.toString(16),
+          toBlock:   '0x'+hasta.toString(16)
+        }]}),
+        signal: ctrl.signal
+      });
+      const j = await r.json();
+      if(!r.ok || j.error) throw new Error((j.error && j.error.message) || ('HTTP '+r.status));
+      return j.result || [];
+    } finally { clearTimeout(t); }
   };
   const [compras, ventas] = await Promise.all([pedir(TOPIC_COMPRA), pedir(TOPIC_VENTA)]);
   const dec = ethers.AbiCoder.defaultAbiCoder();
@@ -1457,6 +1511,91 @@ function arrancarFeed(){
   sondearActividad(true);
   clearInterval(S._feedTimer);
   S._feedTimer = setInterval(()=>sondearActividad(false), 20000);
+}
+
+
+/* ------------------------------------------------------------------
+   DIAGNOSTICO
+   Prueba cada RPC con las consultas que la app necesita de verdad y
+   escribe el resultado en pantalla. Sirve para saber que falla sin
+   depender de una consola que en World App no se puede abrir.
+   ------------------------------------------------------------------ */
+async function diagnostico(){
+  const caja = $('diag');
+  caja.classList.remove('hidden');
+  const lineas = [];
+  const escribe = (t) => { lineas.push(t); caja.innerHTML = lineas.join('\n'); };
+
+  escribe('<b>' + BUILD + '</b>');
+  escribe('router ' + GEK_ROUTER);
+
+  // 1) que RPC responde
+  let bloque = 0;
+  for(const url of RPCS){
+    const host = url.split('/')[2] + (url.includes('/v2/') ? ' (alchemy)' : '');
+    try{
+      const ctrl = new AbortController();
+      const to = setTimeout(()=>ctrl.abort(), 8000);
+      const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]}), signal: ctrl.signal });
+      clearTimeout(to);
+      const j = await r.json();
+      if(!j.result) throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+      bloque = Math.max(bloque, parseInt(j.result,16));
+      escribe('bloque ok  ' + host);
+    }catch(e){ escribe('<i>bloque FALLA</i> ' + host + ' — ' + (e.message||e)); }
+  }
+  if(!bloque){ escribe('<i>ningun RPC responde</i>'); return; }
+  escribe('bloque actual ' + bloque + '  ·  router desplegado en ' + ROUTER_BLOQUE_0);
+  escribe('bloques de historia: ' + (bloque - ROUTER_BLOQUE_0));
+
+  // 2) que RPC acepta getLogs y con que rango
+  for(const url of RPCS){
+    const host = url.split('/')[2] + (url.includes('/v2/') ? ' (alchemy)' : '');
+    for(const rango of [900, 100, 10]){
+      try{
+        const desde = Math.max(ROUTER_BLOQUE_0, bloque - rango + 1);
+        const ctrl = new AbortController();
+        const to = setTimeout(()=>ctrl.abort(), 10000);
+        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
+            address: lc(GEK_ROUTER),
+            fromBlock:'0x'+desde.toString(16), toBlock:'0x'+bloque.toString(16) }]}), signal: ctrl.signal });
+        clearTimeout(to);
+        const j = await r.json();
+        if(!r.ok || j.error) throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+        escribe('logs ok    ' + host + '  rango ' + rango + '  → ' + (j.result||[]).length + ' evento(s)');
+        break;
+      }catch(e){
+        escribe('<i>logs FALLA</i> ' + host + ' rango ' + rango + ' — ' + String(e.message||e).slice(0,90));
+      }
+    }
+  }
+
+  // 3) buscar eventos del router en toda la historia, con el mejor RPC
+  try{
+    const url = await elegirRpcLogs();
+    escribe('historial via <b>' + url.split('/')[2] + '</b>');
+    let total = 0, tramos = 0, fallos = 0, err = '';
+    for(let d = ROUTER_BLOQUE_0; d <= bloque; d += 900){
+      const h = Math.min(d + 899, bloque);
+      tramos++;
+      try{
+        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
+            address: lc(GEK_ROUTER),
+            fromBlock:'0x'+d.toString(16), toBlock:'0x'+h.toString(16) }]}) });
+        const j = await r.json();
+        if(!r.ok || j.error) throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+        total += (j.result||[]).length;
+      }catch(e){ fallos++; if(!err) err = String(e.message||e).slice(0,90); }
+      if(tramos % 20 === 0) escribe('  ...' + tramos + ' tramos, ' + total + ' eventos, ' + fallos + ' fallos');
+    }
+    escribe('<b>TOTAL: ' + total + ' eventos del router</b> en ' + tramos + ' tramos, ' + fallos + ' fallos');
+    if(err) escribe('<i>primer error:</i> ' + err);
+  }catch(e){ escribe('<i>historial FALLA</i> ' + (e.message||e)); }
+
+  escribe('topic Compra ' + ethers.id(TOPIC_COMPRA).slice(0,18) + '…');
 }
 
 async function cargarTokens(){
