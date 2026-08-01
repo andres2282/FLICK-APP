@@ -755,7 +755,7 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b37';
+const BUILD = 'GEK b38';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
@@ -1240,31 +1240,62 @@ function dirATopic(a){
 // pestaña no vuelve a pedir todo.
 const _cacheOps = {};
 
+// El historial se guarda en el navegador: la primera vez cuesta, las
+// siguientes abre al instante y solo se leen los bloques nuevos.
+function cacheLeer(clave){
+  try{
+    const j = JSON.parse(localStorage.getItem('gek.ops.' + clave) || 'null');
+    if(j && Array.isArray(j.lista)) return j;
+  }catch(e){}
+  return null;
+}
+function cacheGuardar(clave, datos){
+  try{
+    // solo las ultimas 300 operaciones, para no llenar el almacenamiento
+    const recorte = { lista: datos.lista.slice(-300), ultimo: datos.ultimo };
+    localStorage.setItem('gek.ops.' + clave, JSON.stringify(recorte));
+  }catch(e){}
+}
+
 async function cargarOperaciones(t){
   const clave = lc(t.curva);
-  if(_cacheOps[clave]){
-    S.ops = _cacheOps[clave]; S.opsError = null;
+
+  // 1) lo que ya se tenia, al instante
+  const guardado = _cacheOps[clave] || cacheLeer(clave);
+  if(guardado){
+    _cacheOps[clave] = guardado;
+    S.ops = guardado; S.opsError = null;
     pintarPanel(t); dibujarChart(t);
-    return;
+  } else {
+    S.ops = null; S.opsError = null; S.opsProgreso = null;
+    pintarPanel(t);
   }
-  S.ops = null; S.opsError = null; S.opsProgreso = null;
-  pintarPanel(t);
+
   try{
     const ultimo = parseInt((await rpcFetch({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]})).result, 16);
 
-    const todas = await barrer(ROUTER_BLOQUE_0, ultimo, 400, (hechos, total, parcial) => {
+    // 2) solo se leen los bloques nuevos desde la ultima vez
+    const desde = guardado && guardado.ultimo ? guardado.ultimo + 1 : ROUTER_BLOQUE_0;
+    if(desde > ultimo){ cargarHolders(t); return; }
+
+    const todas = await barrer(desde, ultimo, 400, (hechos, total, parcial) => {
       S.opsProgreso = Math.round(hechos / total * 100);
       // se va pintando conforme llega, para que no parezca colgado
-      const propias = parcial.filter(o => lc(o.curva) === clave)
-                             .sort((a,b)=>a.bloque-b.bloque);
+      const base = guardado ? guardado.lista : [];
+      const propias = base.concat(parcial.filter(o => lc(o.curva) === clave))
+                          .sort((a,b)=>a.bloque-b.bloque);
       S.ops = { lista: propias, ultimo };
       if(S.actual && S.actual.dir === t.dir) pintarPanel(t);
     });
 
-    const propias = todas.filter(o => lc(o.curva) === clave).sort((a,b)=>a.bloque-b.bloque);
+    const base = guardado ? guardado.lista : [];
+    const propias = base.concat(todas.filter(o => lc(o.curva) === clave))
+                        .sort((a,b)=>a.bloque-b.bloque);
     S.ops = { lista: propias, ultimo };
     S.opsProgreso = null;
     _cacheOps[clave] = S.ops;
+    cacheGuardar(clave, S.ops);
+    cargarHolders(t);
   }catch(e){
     S.opsError = e.message || String(e);
     log('historial: ' + S.opsError, true);
@@ -1379,32 +1410,48 @@ function panelOperaciones(t, cont){
 // Los poseedores se calculan sumando compras y restando ventas del router.
 // Es exacto para quien opera dentro de la app; una transferencia directa
 // entre wallets no se ve aqui.
-function panelPoseedores(t, cont){
-  const saldos = {};
-  for(const o of S.ops.lista){
-    const k = lc(o.usuario);
-    saldos[k] = (saldos[k] || 0) + (o.compra ? o.tok : -o.tok);
-  }
-  const lista = Object.entries(saldos)
-    .filter(([,v]) => v > 0.000001)
-    .sort((a,b) => b[1] - a[1])
-    .slice(0, 30);
+// Los saldos se leen de la cadena, no se calculan sumando operaciones: asi
+// tambien cuenta a quien recibio tokens por transferencia directa.
+async function cargarHolders(t){
+  if(!S.ops) return;
+  const clave = lc(t.curva);
+  const dirs = [...new Set(S.ops.lista.map(o => lc(o.usuario)))];
+  if(!dirs.length){ S.holders = []; pintarPanel(t); return; }
+  try{
+    const saldos = await Promise.all(dirs.map(async d => {
+      const [libre, bloq] = await Promise.all([
+        leer(t.dir, 'saldoDe', [d], ['uint256']),
+        leer(GEK_LOCK, 'bloqueadoDeUsuario', [d, t.dir], ['uint256']),
+      ]);
+      return { dir: d, cant: (libre ? n18(libre[0]) : 0) + (bloq ? n18(bloq[0]) : 0) };
+    }));
+    S.holders = saldos.filter(x => x.cant > 0.000001).sort((a,b) => b.cant - a.cant);
+    S.holdersDe = clave;
+    if(S.actual && lc(S.actual.curva) === clave) pintarPanel(t);
+  }catch(e){ log('holders: ' + (e.message||e), true); }
+}
 
+function panelPoseedores(t, cont){
+  if(!S.holders || S.holdersDe !== lc(t.curva)){
+    cont.innerHTML = '<div class="panel-vacio">Leyendo saldos...</div>';
+    cargarHolders(t);
+    return;
+  }
+  const lista = S.holders.slice(0, 50);
   if(!lista.length){
     cont.innerHTML = '<div class="panel-vacio">Todavia no hay poseedores.</div>';
     return;
   }
-  const total = lista.reduce((a,[,v]) => a + v, 0);
-  cont.innerHTML = `<div class="panel-tit">${lista.length} poseedores &middot; ${S.ops.lista.length} operacion(es)</div>` +
-    lista.map(([addr, cant], k) => `
+  const total = lista.reduce((a,x) => a + x.cant, 0);
+  cont.innerHTML = `<div class="panel-tit">${S.holders.length} poseedores</div>` +
+    lista.map((x, k) => `
       <div class="op-row">
         <span class="hold-pos">#${k+1}</span>
-        <span class="quien">${nombreAsync(addr, 'hd'+k)}</span>
-        <span class="cuanto">${fmt(cant,0)}</span>
+        <span class="quien">${nombreAsync(x.dir, 'hd'+k)}</span>
+        <span class="cuanto">${fmt(x.cant,0)}</span>
         <span class="cuanto" style="color:var(--dim);min-width:52px;text-align:right">
-          ${(cant/total*100).toFixed(1)}%</span>
-      </div>`).join('') +
-    '<p class="nota" style="margin-top:10px">Calculado con las operaciones hechas en GEK. Una transferencia directa entre wallets no se refleja aqui.</p>';
+          ${(x.cant/total*100).toFixed(1)}%</span>
+      </div>`).join('');
 }
 
 /* ------------------------------------------------------------------
@@ -1498,7 +1545,7 @@ async function barrer(desde, hasta, maxPeticiones, avisar){
   }
   if(maxPeticiones && tramos.length > maxPeticiones) tramos.splice(0, tramos.length - maxPeticiones);
   // Menos peticiones a la vez: en paralelo agresivo el RPC empieza a rechazar.
-  const EN_PARALELO = 4;
+  const EN_PARALELO = 12;
   let ops = [], hechos = 0, fallos = 0, primerError = null;
   for(let i = 0; i < tramos.length; i += EN_PARALELO){
     const tanda = tramos.slice(i, i + EN_PARALELO);
@@ -1507,7 +1554,6 @@ async function barrer(desde, hasta, maxPeticiones, avisar){
     res.forEach(r => ops = ops.concat(r));
     hechos += tanda.length;
     if(avisar) avisar(hechos, tramos.length, ops);
-    await new Promise(r => setTimeout(r, 60));   // respiro entre tandas
   }
   // si fallo mas de la mitad, el resultado no es de fiar: se avisa
   if(primerError && fallos > tramos.length / 2){
@@ -1939,6 +1985,7 @@ function abrirToken(sym){
       if(S.actual && S.actual.dir === t.dir) setLado(S.lado);
     });
   }
+  S.holders = null; S.holdersDe = null;
   cargarOperaciones(t);
   dibujarChart(t);
   setLado('comprar');
@@ -2010,9 +2057,6 @@ function dibujarChart(t){
       ctx.fillStyle = o.compra ? '#C6FF3D' : '#FF4D6A'; ctx.fill();
     });
 
-    ctx.fillStyle = '#4C5A55'; ctx.textAlign = 'left';
-    ctx.font = '10px monospace';
-    ctx.fillText((pts.length-1) + ' operaciones', 8, 14);
   }catch(e){
     log('grafico: ' + (e.message||e), true);
   }
