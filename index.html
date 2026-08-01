@@ -284,6 +284,10 @@ img.ava{object-fit:cover;display:block;
   background:#0A0F12;border:1px solid var(--line);display:block}
 .ava-mini.txt{display:grid;place-items:center;font-family:var(--display);
   font-size:10px;color:#08110A;background:var(--lime);border:0}
+.pf-head{padding:22px 14px 4px;text-align:center}
+.pf-label{margin:0;font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+.pf-total{margin:4px 0 0;font-family:var(--mono);font-size:36px;font-weight:700;letter-spacing:-.02em}
+.pf-sub{margin:5px 0 0;font-size:12px;color:var(--dim)}
 .grupo{font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;
   margin:16px 0 8px}
 .bloq{margin-top:9px;padding:7px 9px;border-radius:8px;font-size:11.5px;
@@ -675,13 +679,19 @@ img.ava{object-fit:cover;display:block;
     <div class="hint" style="margin-top:10px;text-align:center">
       Todo se guarda en una sola firma. La imagen entra en tamaño reducido porque comparte transacción con la creación — desde la página del token la puedes reemplazar por una más nítida.
     </div>
-    <p class="nota">.</p>
+    <p class="nota">Contratos públicos y todavía sin auditar. Lo que la app promete
+      —techo de comisión del 2%, tu compra inicial en custodia— está escrito en el
+      contrato y cualquiera puede comprobarlo en la cadena.</p>
   </div>
 </main>
 
 <!-- ===================== PORTAFOLIO ===================== -->
 <main id="v-portafolio" class="hidden">
-  <div class="sec"><div class="sec-hd"><h2>Portafolio</h2><div class="sp"></div><span class="cnt" id="pnlTotal"></span></div></div>
+  <div class="pf-head">
+    <p class="pf-label">Valor total</p>
+    <h1 class="pf-total" id="pnlTotal">—</h1>
+    <p class="pf-sub" id="pnlSub"></p>
+  </div>
   <div id="holdings" class="sec" style="padding-top:0"></div>
 </main>
 
@@ -730,7 +740,7 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b32';
+const BUILD = 'GEK b33';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
@@ -1194,47 +1204,37 @@ function dirATopic(a){
   return '0x' + '0'.repeat(24) + lc(a).replace('0x','');
 }
 
-async function traerLogs(topic0, topicCurva, desde, hasta){
-  const j = await rpcFetch({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
-      address: lc(GEK_ROUTER),
-      topics: [ethers.id(topic0), null, topicCurva],
-      fromBlock: '0x'+desde.toString(16),
-      toBlock:   '0x'+hasta.toString(16)
-    }]});
-  if(j.error) throw new Error(j.error.message || 'getLogs');
-  return j.result || [];
-}
+
+// Lee TODA la historia del token desde que existe el router. Se hace en tandas
+// paralelas de 900 bloques (tope del RPC) y se guarda en cache, asi cambiar de
+// pestaña no vuelve a pedir todo.
+const _cacheOps = {};
 
 async function cargarOperaciones(t){
-  S.ops = null; S.opsError = null;
+  const clave = lc(t.curva);
+  if(_cacheOps[clave]){
+    S.ops = _cacheOps[clave]; S.opsError = null;
+    pintarPanel(t); dibujarChart(t);
+    return;
+  }
+  S.ops = null; S.opsError = null; S.opsProgreso = null;
   pintarPanel(t);
   try{
     const ultimo = parseInt((await rpcFetch({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]})).result, 16);
-    const topicCurva = dirATopic(t.curva);
 
-    const TRAMO = 9000, MAX = 40;
-    let ops = [], tramos = 0;
-    for(let desde = ROUTER_BLOQUE_0; desde <= ultimo && tramos < MAX; desde += TRAMO){
-      const hasta = Math.min(desde + TRAMO - 1, ultimo);
-      const [compras, ventas] = await Promise.all([
-        traerLogs(TOPIC_COMPRA, topicCurva, desde, hasta),
-        traerLogs(TOPIC_VENTA,  topicCurva, desde, hasta),
-      ]);
-      tramos++;
-      const dec = ethers.AbiCoder.defaultAbiCoder();
-      for(const l of compras){
-        const [wld, tok] = dec.decode(['uint256','uint256'], l.data);
-        ops.push({ tipo:'compra', usuario:'0x'+l.topics[1].slice(26),
-                   wld:n18(wld), tok:n18(tok), bloque:parseInt(l.blockNumber,16) });
-      }
-      for(const l of ventas){
-        const [tok, wld] = dec.decode(['uint256','uint256'], l.data);
-        ops.push({ tipo:'venta', usuario:'0x'+l.topics[1].slice(26),
-                   wld:n18(wld), tok:n18(tok), bloque:parseInt(l.blockNumber,16) });
-      }
-    }
-    ops.sort((a,b)=>a.bloque-b.bloque);
-    S.ops = { lista: ops, ultimo };
+    const todas = await barrer(ROUTER_BLOQUE_0, ultimo, 400, (hechos, total, parcial) => {
+      S.opsProgreso = Math.round(hechos / total * 100);
+      // se va pintando conforme llega, para que no parezca colgado
+      const propias = parcial.filter(o => lc(o.curva) === clave)
+                             .sort((a,b)=>a.bloque-b.bloque);
+      S.ops = { lista: propias, ultimo };
+      if(S.actual && S.actual.dir === t.dir) pintarPanel(t);
+    });
+
+    const propias = todas.filter(o => lc(o.curva) === clave).sort((a,b)=>a.bloque-b.bloque);
+    S.ops = { lista: propias, ultimo };
+    S.opsProgreso = null;
+    _cacheOps[clave] = S.ops;
   }catch(e){
     S.opsError = e.message || String(e);
   }
@@ -1257,6 +1257,8 @@ function pintarPanel(t){
     return;
   }
   if(!S.ops){ cont.innerHTML = '<div class="panel-vacio">Leyendo operaciones...</div>'; return; }
+  const prog = S.opsProgreso != null && S.opsProgreso < 100
+    ? `<div class="panel-vacio" style="padding:4px 0 10px">leyendo historial ${S.opsProgreso}%</div>` : '';
   const cual = S.panel || 'stats';
   if(cual === 'trades')  return panelOperaciones(t, cont);
   if(cual === 'holders') return panelPoseedores(t, cont);
@@ -1287,7 +1289,7 @@ function panelResumen(t, cont){
       <div class="pf-num"><b class="up">${n1}</b><b class="down">${n2}</b></div>
     </div>`;
 
-  cont.innerHTML = `
+  cont.innerHTML = prog + `
     <div class="panel-tit">Ultimas 24 horas</div>
     ${fila('COMPRAS', c.length, 'VENTAS', v.length)}
     ${barra(c.length, v.length)}
@@ -1351,7 +1353,7 @@ function panelPoseedores(t, cont){
    ------------------------------------------------------------------ */
 const TOPIC_COMPRA = 'Compra(address,address,uint256,uint256)';
 const TOPIC_VENTA  = 'Venta(address,address,uint256,uint256)';
-const VENTANA_BLOQUES = 2000;
+const VENTANA_BLOQUES = 900;   // el RPC permite 1000 como maximo
 let _ultimoBloqueVisto = 0;
 
 async function bloqueActual(){
@@ -1386,18 +1388,33 @@ async function logsDeRango(desde, hasta){
   return ops;
 }
 
+// Barre un rango grande en tandas paralelas, respetando el tope por consulta.
+async function barrer(desde, hasta, maxPeticiones, avisar){
+  const tramos = [];
+  for(let d = desde; d <= hasta; d += VENTANA_BLOQUES){
+    tramos.push([d, Math.min(d + VENTANA_BLOQUES - 1, hasta)]);
+  }
+  if(maxPeticiones && tramos.length > maxPeticiones) tramos.splice(0, tramos.length - maxPeticiones);
+  const EN_PARALELO = 8;
+  let ops = [], hechos = 0;
+  for(let i = 0; i < tramos.length; i += EN_PARALELO){
+    const tanda = tramos.slice(i, i + EN_PARALELO);
+    const res = await Promise.all(tanda.map(([a,b]) => logsDeRango(a,b).catch(()=>[])));
+    res.forEach(r => ops = ops.concat(r));
+    hechos += tanda.length;
+    if(avisar) avisar(hechos, tramos.length, ops);
+  }
+  return ops;
+}
+
 async function sondearActividad(primeraVez){
   try{
     const ahora = await bloqueActual();
     if(!ahora) return;
     let desde = primeraVez
-      ? ahora - VENTANA_BLOQUES * 3
+      ? ahora - VENTANA_BLOQUES * 4
       : (_ultimoBloqueVisto ? _ultimoBloqueVisto + 1 : ahora - VENTANA_BLOQUES);
-    let nuevas = [];
-    for(let d = desde; d <= ahora; d += VENTANA_BLOQUES){
-      const h = Math.min(d + VENTANA_BLOQUES - 1, ahora);
-      nuevas = nuevas.concat(await logsDeRango(d, h));
-    }
+    let nuevas = await barrer(desde, ahora, 6);
     _ultimoBloqueVisto = ahora;
     if(nuevas.length){
       nuevas.sort((a,b)=>b.bloque-a.bloque);
@@ -2274,8 +2291,12 @@ async function pintarPortafolio(){
     .sort((a,b) => b.cant - a.cant);
 
   // el total solo suma lo que se puede valorar de verdad
-  const totalWld = wld + mios.reduce((a,f) => a + f.valor, 0);
+  const enTokens = mios.reduce((a,f) => a + f.valor, 0);
+  const totalWld = wld + enTokens;
   $('pnlTotal').textContent = fmt(totalWld, 3) + ' WLD';
+  const sub = $('pnlSub');
+  if(sub) sub.textContent = fmt(wld,3) + ' en WLD  ·  ' + fmt(enTokens,3) + ' en tokens'
+    + (otros.length ? '  ·  ' + otros.length + ' token(s) sin precio' : '');
 
   if(!wld && !mios.length && !otros.length){
     cont.innerHTML = `<div class="empty"><h3>Wallet vacia</h3>
