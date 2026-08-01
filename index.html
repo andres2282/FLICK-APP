@@ -284,6 +284,8 @@ img.ava{object-fit:cover;display:block;
   background:#0A0F12;border:1px solid var(--line);display:block}
 .ava-mini.txt{display:grid;place-items:center;font-family:var(--display);
   font-size:10px;color:#08110A;background:var(--lime);border:0}
+.grupo{font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;
+  margin:16px 0 8px}
 .bloq{margin-top:9px;padding:7px 9px;border-radius:8px;font-size:11.5px;
   background:rgba(198,255,61,.08);border:1px solid rgba(198,255,61,.22);color:var(--lime)}
 .dots-wrap{position:relative;padding:0 14px 4px;display:flex;justify-content:flex-end}
@@ -730,13 +732,53 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b27 - holders y trades';
+const BUILD = 'GEK b30';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
 // archivo (es inevitable en una app sin servidor); está restringida por dominio
 // en el panel de Alchemy.
-const WORLD_CHAIN_RPC   = "https://worldchain-mainnet.g.alchemy.com/v2/alch_A6IFU1pD5v9RL__O7Bwqt";
+// Lista de RPC por orden de preferencia. Al arrancar se prueban todos a la vez
+// y se usa el primero que conteste, asi un proveedor caido no tumba la app.
+const RPCS = [
+  "https://worldchain-mainnet.g.alchemy.com/v2/alch_A6IFU1pD5v9RL__O7Bwqt",
+  "https://worldchain-mainnet.g.alchemy.com/public",
+  "https://worldchain.drpc.org",
+  "https://480.rpc.thirdweb.com",
+];
+let   WORLD_CHAIN_RPC = RPCS[0];
+let   _rpcFallos = 0;
+
+// Prueba todos y se queda con el primero que responda un numero de bloque.
+async function elegirRPC(){
+  const prueba = async (url) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), 6000);
+    try{
+      const r = await fetch(url, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]}),
+        signal: ctrl.signal
+      });
+      const j = await r.json();
+      if(!j.result) throw new Error((j.error && j.error.message) || 'sin resultado');
+      return url;
+    } finally { clearTimeout(t); }
+  };
+  const errores = [];
+  const intentos = RPCS.map(u => prueba(u).catch(e => {
+    errores.push(u.split('/')[2] + ': ' + (e.message||e));
+    throw e;
+  }));
+  try{
+    WORLD_CHAIN_RPC = await Promise.any(intentos);
+    S.rpcUsado = WORLD_CHAIN_RPC.split('/')[2];
+    return true;
+  }catch(e){
+    S.rpcError = 'Ningun RPC respondio. ' + errores.join(' | ');
+    return false;
+  }
+}
 const CHAIN_ID          = 480;
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 
@@ -852,17 +894,41 @@ function encodeCall(signature, types, values){
   const safe = values.map((v,i)=> types[i]==='address' && typeof v==='string' ? lc(v) : v);
   return selector + ethers.AbiCoder.defaultAbiCoder().encode(types, safe).slice(2);
 }
-async function rpcCall(to, data, retries=2){
+// Toda peticion al RPC pasa por aqui: con tiempo limite, para que la app
+// nunca se quede colgada esperando, y con respaldo al RPC publico si el
+// principal falla varias veces seguidas.
+async function rpcFetch(cuerpo, ms){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), ms || 6000);
   try{
-    const res = await fetch(WORLD_CHAIN_RPC, {
+    const r = await fetch(WORLD_CHAIN_RPC, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to,data},'latest']})
+      body: JSON.stringify(cuerpo), signal: ctrl.signal
     });
-    const j = await res.json();
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    _rpcFallos = 0;
+    return j;
+  }catch(e){
+    _rpcFallos++;
+    // tras varios fallos seguidos se cambia al RPC publico y se avisa
+    if(_rpcFallos >= 3 && WORLD_CHAIN_RPC !== RPC_RESPALDO){
+      WORLD_CHAIN_RPC = RPC_RESPALDO;
+      S.rpcDegradado = true;
+      _rpcFallos = 0;
+    }
+    throw e;
+  } finally { clearTimeout(t); }
+}
+
+async function rpcCall(to, data, retries=1){
+  try{
+    const j = await rpcFetch({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to,data},'latest']});
     if(j.error){ console.error('rpc:', j.error); return null; }
     return j.result;
   }catch(e){
-    if(retries>0){ await new Promise(r=>setTimeout(r,800)); return rpcCall(to,data,retries-1); }
+    if(retries>0){ await new Promise(r=>setTimeout(r,600)); return rpcCall(to,data,retries-1); }
+    S.rpcError = e.message || String(e);
     return null;
   }
 }
@@ -1106,16 +1172,12 @@ function dirATopic(a){
 }
 
 async function traerLogs(topic0, topicCurva, desde, hasta){
-  const res = await fetch(WORLD_CHAIN_RPC, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
+  const j = await rpcFetch({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
       address: lc(GEK_ROUTER),
       topics: [ethers.id(topic0), null, topicCurva],
       fromBlock: '0x'+desde.toString(16),
       toBlock:   '0x'+hasta.toString(16)
-    }]})
-  });
-  const j = await res.json();
+    }]});
   if(j.error) throw new Error(j.error.message || 'getLogs');
   return j.result || [];
 }
@@ -1124,11 +1186,7 @@ async function cargarOperaciones(t){
   S.ops = null; S.opsError = null;
   pintarPanel(t);
   try{
-    const rb = await fetch(WORLD_CHAIN_RPC, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]})
-    });
-    const ultimo = parseInt((await rb.json()).result, 16);
+    const ultimo = parseInt((await rpcFetch({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]})).result, 16);
     const topicCurva = dirATopic(t.curva);
 
     const TRAMO = 9000, MAX = 40;
@@ -1265,10 +1323,16 @@ function panelPoseedores(t, cont){
 async function cargarTokens(){
   if(DEMO){ S.tokens = EJEMPLO.slice(); return; }
   S.cargando = true;
+  try{ await _cargarTokens(); }
+  catch(e){ S.rpcError = e.message || String(e); S.tokens = S.tokens || []; }
+  finally{ S.cargando = false; }
+}
+
+async function _cargarTokens(){
 
   const tot = await leer(GEK_FACTORY, 'totalTokens', [], ['uint256']);
   const n = tot ? Number(tot[0]) : 0;
-  if(!n){ S.tokens = []; S.cargando = false; return; }
+  if(!n){ S.tokens = []; return; }
 
   // Los más recientes primero, hasta 30 para no castigar el RPC.
   const base = await precioLanzamiento();
@@ -1324,7 +1388,6 @@ async function cargarTokens(){
   }));
 
   S.tokens = tokens.filter(Boolean);
-  S.cargando = false;
 }
 
 // Avatar: la imagen real si existe, si no la inicial del símbolo
@@ -1465,6 +1528,13 @@ function pintarLista(){
 
   $('listCount').textContent = l.length ? l.length+(l.length===1?' token':' tokens') : '';
 
+  if(!S.cargando && S.rpcError && !S.tokens.length){
+    $('lista').innerHTML = `<div class="empty">
+      <h3>No se pudo leer la cadena</h3>
+      <p style="font-family:var(--mono);font-size:11px">${S.rpcError}</p>
+      <button class="cta" onclick="location.reload()">Reintentar</button></div>`;
+    return;
+  }
   if(S.cargando){
     $('lista').innerHTML = `<div class="empty"><div class="spin"></div>
       <p style="margin-top:14px">Leyendo la cadena…</p></div>`;
@@ -1832,12 +1902,8 @@ function presupuestoBytes(gasDisponible){
 
 async function estimarGas(desde, hacia, data){
   try{
-    const res = await fetch(WORLD_CHAIN_RPC, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_estimateGas',
-        params:[{ from: lc(desde), to: lc(hacia), data }] })
-    });
-    const j = await res.json();
+    const j = await rpcFetch({ jsonrpc:'2.0', id:1, method:'eth_estimateGas',
+        params:[{ from: lc(desde), to: lc(hacia), data }] });
     if(j.error || !j.result) return null;
     return parseInt(j.result, 16);
   }catch(e){ return null; }
@@ -1923,12 +1989,8 @@ async function predecirProximoToken(){
       if(!r) return null;
       _tokenFactory = r[0];
     }
-    const res = await fetch(WORLD_CHAIN_RPC, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getTransactionCount',
-        params:[lc(_tokenFactory), 'latest'] })
-    });
-    const j = await res.json();
+    const j = await rpcFetch({ jsonrpc:'2.0', id:1, method:'eth_getTransactionCount',
+        params:[lc(_tokenFactory), 'latest'] });
     if(j.error || !j.result) return null;
     const nonce = parseInt(j.result, 16);
     return ethers.getCreateAddress({ from: _tokenFactory, nonce });
@@ -2039,69 +2101,131 @@ function destacar(){
 }
 
 /* ---------- portafolio ---------- */
+// Lista TODOS los ERC-20 de la wallet usando la API de Alchemy.
+// Los de GEK se pueden valorar con su curva; los de fuera no, porque su precio
+// vive en pools de Uniswap que habria que consultar aparte.
+async function tokensExternos(){
+  // alchemy_getTokenBalances solo existe en Alchemy; con otro RPC se omite
+  if(!/alchemy/.test(WORLD_CHAIN_RPC)) return [];
+  try{
+    const j = await rpcFetch({ jsonrpc:'2.0', id:1, method:'alchemy_getTokenBalances',
+                             params:[S.wallet, 'erc20'] });
+    if(j.error || !j.result) return [];
+    const conSaldo = (j.result.tokenBalances || [])
+      .filter(b => b.tokenBalance && /[1-9a-f]/.test(b.tokenBalance.slice(2)));
+
+    const metas = await Promise.all(conSaldo.slice(0, 25).map(async b => {
+      try{
+        const mj = await rpcFetch({ jsonrpc:'2.0', id:1, method:'alchemy_getTokenMetadata',
+                                 params:[b.contractAddress] });
+        const md = mj.result || {};
+        const dec = md.decimals != null ? md.decimals : 18;
+        return {
+          dir: b.contractAddress,
+          s: md.symbol || '???',
+          n: md.name || 'Token',
+          logo: md.logo || null,
+          cant: Number(BigInt(b.tokenBalance)) / Math.pow(10, dec),
+        };
+      }catch(e){ return null; }
+    }));
+    return metas.filter(x => x && x.cant > 0);
+  }catch(e){ return []; }
+}
+
 async function pintarPortafolio(){
   const cont = $('holdings');
   if(!S.conectado){
     cont.innerHTML = `<div class="empty">
-      <h3>Conecta tu wallet</h3><p>Aqui veras tus tokens y lo que tengas bloqueado.</p>
+      <h3>Conecta tu wallet</h3><p>Aqui veras todos tus tokens.</p>
       <button class="cta" onclick="conectarWallet()">Conectar wallet</button></div>`;
     $('pnlTotal').textContent = ''; return;
   }
-  if(!S.tokens.length){
-    cont.innerHTML = `<div class="empty"><h3>Todavia no hay tokens</h3>
-      <p>Cuando alguien cree uno aparecera aqui.</p></div>`;
-    return;
-  }
 
   cont.innerHTML = `<div class="empty"><div class="spin"></div>
-    <p style="margin-top:14px">Leyendo tus saldos...</p></div>`;
+    <p style="margin-top:14px">Leyendo tu wallet...</p></div>`;
 
-  // saldo libre y saldo en custodia de cada token
-  const filas = await Promise.all(S.tokens.map(async t => {
-    const [libre, bloq] = await Promise.all([
-      leer(t.dir, 'saldoDe', [S.wallet], ['uint256']),
-      leer(GEK_LOCK, 'bloqueadoDeUsuario', [S.wallet, t.dir], ['uint256']),
-    ]);
-    const l = libre ? n18(libre[0]) : 0;
-    const b = bloq ? n18(bloq[0]) : 0;
-    return { t, libre:l, bloq:b, total:l+b, valor:(l+b)*t.p };
-  }));
+  // 1) WLD  2) tokens de GEK con su valor  3) el resto de la wallet
+  const [wldSaldo, filasGek, externos] = await Promise.all([
+    leer(WLD_TOKEN_ADDRESS, 'saldoDe', [S.wallet], ['uint256']),
+    Promise.all(S.tokens.map(async t => {
+      const [libre, bloq] = await Promise.all([
+        leer(t.dir, 'saldoDe', [S.wallet], ['uint256']),
+        leer(GEK_LOCK, 'bloqueadoDeUsuario', [S.wallet, t.dir], ['uint256']),
+      ]);
+      const l = libre ? n18(libre[0]) : 0;
+      const b = bloq ? n18(bloq[0]) : 0;
+      return { t, libre:l, bloq:b, total:l+b, valor:(l+b)*t.p };
+    })),
+    tokensExternos(),
+  ]);
 
-  const mios = filas.filter(f => f.total > 0).sort((a,b) => b.valor - a.valor);
+  const wld = wldSaldo ? n18(wldSaldo[0]) : 0;
+  const mios = filasGek.filter(f => f.total > 0).sort((a,b) => b.valor - a.valor);
+  const dirsGek = new Set(S.tokens.map(t => lc(t.dir)));
+  const otros = externos
+    .filter(e => !dirsGek.has(lc(e.dir)) && lc(e.dir) !== lc(WLD_TOKEN_ADDRESS))
+    .sort((a,b) => b.cant - a.cant);
 
-  if(!mios.length){
-    cont.innerHTML = `<div class="empty"><h3>Sin posiciones</h3>
+  // el total solo suma lo que se puede valorar de verdad
+  const totalWld = wld + mios.reduce((a,f) => a + f.valor, 0);
+  $('pnlTotal').textContent = fmt(totalWld, 3) + ' WLD';
+
+  if(!wld && !mios.length && !otros.length){
+    cont.innerHTML = `<div class="empty"><h3>Wallet vacia</h3>
       <p>Cuando compres un token aparecera aqui.</p>
       <button class="cta" onclick="ir('explorar')">Explorar tokens</button></div>`;
-    $('pnlTotal').textContent = '0 WLD';
     return;
   }
 
-  const totalWld = mios.reduce((a,f) => a + f.valor, 0);
-  $('pnlTotal').textContent = fmt(totalWld, 4) + ' WLD';
-
-  cont.innerHTML = mios.map(f => `
-    <button class="tk" onclick="abrirToken('${f.t.s}')">
+  const fila = (logo, nom, sub, der, der2, extra) => `
+    <div class="tk" style="margin-bottom:8px">
       <div class="tk-top">
-        ${avatar(f.t)}
-        <div class="tk-id">
-          <h3>${f.t.n}</h3>
-          <div class="sub">${fmt(f.total,0)} $${f.t.s}</div>
-        </div>
-        <div class="tk-pr">
-          <div class="p">${fmt(f.valor,4)}</div>
-          <div class="d" style="color:var(--dim)">WLD</div>
-        </div>
+        ${logo}
+        <div class="tk-id"><h3>${nom}</h3><div class="sub">${sub}</div></div>
+        <div class="tk-pr"><div class="p">${der}</div><div class="d" style="color:var(--dim)">${der2}</div></div>
       </div>
-      ${f.bloq > 0 ? `<div class="bloq">&#128274; ${fmt(f.bloq,0)} en custodia`
-        + (f.libre > 0 ? ` &middot; ${fmt(f.libre,0)} disponibles` : '') + `</div>` : ''}
-    </button>`).join('');
+      ${extra || ''}
+    </div>`;
+
+  let html = '';
+
+  if(wld > 0){
+    html += fila('<div class="ava" style="background:#fff;color:#000">W</div>',
+                 'WLD', 'World', fmt(wld,3), 'WLD');
+  }
+
+  if(mios.length){
+    html += '<div class="grupo">Tokens de GEK</div>';
+    html += mios.map(f => `
+      <button class="tk" onclick="abrirToken('${f.t.s}')" style="margin-bottom:8px">
+        <div class="tk-top">
+          ${avatar(f.t)}
+          <div class="tk-id"><h3>${f.t.n}</h3>
+            <div class="sub">${fmt(f.total,0)} $${f.t.s}</div></div>
+          <div class="tk-pr"><div class="p">${fmt(f.valor,4)}</div>
+            <div class="d" style="color:var(--dim)">WLD</div></div>
+        </div>
+        ${f.bloq > 0 ? `<div class="bloq">&#128274; ${fmt(f.bloq,0)} en custodia`
+          + (f.libre > 0 ? ` &middot; ${fmt(f.libre,0)} disponibles` : '') + `</div>` : ''}
+      </button>`).join('');
+  }
+
+  if(otros.length){
+    html += '<div class="grupo">Otros tokens de tu wallet</div>';
+    html += otros.map(e => fila(
+      e.logo ? `<img class="ava" src="${e.logo}" alt="">`
+             : `<div class="ava">${(e.s||'?')[0]}</div>`,
+      e.s, e.n, fmt(e.cant, e.cant < 1 ? 4 : 0), '')).join('');
+    html += '<p class="nota">Estos no se lanzaron en GEK, asi que no se les puede poner precio desde aqui y no entran en el total.</p>';
+  }
+
+  cont.innerHTML = html;
 }
-
-
 /* ---------- perfil ---------- */
 function pintarPerfil(){
-  const b = $('pBuild'); if(b) b.textContent = BUILD;
+  const b = $('pBuild');
+  if(b) b.textContent = BUILD + (S.rpcUsado ? ' · ' + S.rpcUsado : '');
   if(!S.conectado){
     $('pName').textContent = 'Sin conectar';
     $('pAddr').textContent = 'Conecta tu wallet para ver tu perfil';
@@ -2129,6 +2253,7 @@ function renderTodo(){
 }
 (async function init(){
   renderTodo();              // muestra el spinner de inmediato
+  await elegirRPC();         // primero, un RPC que de verdad responda
   arrancarFeed();            // actividad en vivo, en paralelo
   await cargarTokens();
   renderTodo();
