@@ -301,6 +301,18 @@ img.ava{object-fit:cover;display:block;
   border:1px solid rgba(255,77,106,.3);word-break:break-word;user-select:text}
 
 /* ---------- aviso sin auditoría ---------- */
+.tabs2{display:flex;gap:6px;margin:0 14px 8px}
+.tab2{flex:1;padding:9px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);
+  font-size:12.5px;font-weight:700;color:var(--dim)}
+.tab2.on{background:var(--lime);border-color:var(--lime);color:#08110A}
+.op-row{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--line)}
+.op-row:last-child{border-bottom:0}
+.op-row .quien{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.op-row .cuanto{font-family:var(--mono);font-size:12.5px;font-weight:700}
+.op-tag{font-size:9.5px;font-weight:700;letter-spacing:.08em;padding:3px 7px;border-radius:6px}
+.op-tag.c{color:var(--lime);background:rgba(198,255,61,.12)}
+.op-tag.v{color:var(--red);background:rgba(255,77,106,.12)}
+.hold-pos{width:22px;font-family:var(--mono);font-size:11px;color:var(--dim);flex:none}
 .panel{margin:0 14px 4px;padding:13px;border-radius:13px;
   background:var(--panel);border:1px solid var(--line)}
 .panel-tit{font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;
@@ -514,6 +526,11 @@ img.ava{object-fit:cover;display:block;
     <div class="stat"><span>En circulación</span><b id="dCirc">—</b></div>
     <div class="stat"><span>Desde el lanzamiento</span><b id="dDesde">—</b></div>
   </div>
+  <div class="tabs2" id="dTabs">
+    <button class="tab2 on" data-p="stats"   onclick="setPanel('stats')">Resumen</button>
+    <button class="tab2"    data-p="trades"  onclick="setPanel('trades')">Operaciones</button>
+    <button class="tab2"    data-p="holders" onclick="setPanel('holders')">Poseedores</button>
+  </div>
   <div id="dPanel" class="panel"></div>
 
   <div style="padding:0 14px">
@@ -713,13 +730,13 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b26 - feed en vivo';
+const BUILD = 'GEK b27 - holders y trades';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
 // archivo (es inevitable en una app sin servidor); está restringida por dominio
 // en el panel de Alchemy.
-const WORLD_CHAIN_RPC   = "https://worldchain-mainnet.g.alchemy.com/v2/ppHBVS01TIchyiDYE3zbn";
+const WORLD_CHAIN_RPC   = "https://worldchain-mainnet.g.alchemy.com/v2/alch_A6IFU1pD5v9RL__O7Bwqt";
 const CHAIN_ID          = 480;
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 
@@ -853,6 +870,38 @@ async function rpcCall(to, data, retries=2){
 /* ==================================================================
    WALLET — MiniKit dentro de World App, wallet inyectada fuera
    ================================================================== */
+// ---- direccion -> nombre de usuario de World App ----
+const _nombres = {};
+async function nombreDe(addr){
+  if(!addr) return '';
+  const k = lc(addr);
+  if(_nombres[k] !== undefined) return _nombres[k];
+  _nombres[k] = '';
+  try{
+    const mk = mkRef();
+    if(mk && mk.getUserByAddress){
+      const u = await mk.getUserByAddress(addr);
+      if(u && u.username){ _nombres[k] = u.username; return u.username; }
+    }
+    const r = await fetch('https://usernames.worldcoin.org/api/v1/query', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ addresses: [addr] })
+    });
+    const j = await r.json();
+    const enc = Array.isArray(j) ? j[0] : (j && j.result && j.result[0]);
+    if(enc && enc.username){ _nombres[k] = enc.username; return enc.username; }
+  }catch(e){ /* si no hay nombre se deja la direccion corta */ }
+  return _nombres[k];
+}
+// pinta la direccion corta y la sustituye por el nombre cuando llega
+function nombreAsync(addr, id){
+  nombreDe(addr).then(n=>{
+    const el = document.getElementById(id);
+    if(el && n) el.textContent = '@' + n;
+  });
+  return `<span id="${id}">${corto(addr)}</span>`;
+}
+
 function mkRef(){ return window._MiniKit || window.MiniKit; }
 function enWorldApp(){ const mk = mkRef(); return !!(mk && mk.isInstalled && mk.isInstalled()); }
 
@@ -1112,6 +1161,13 @@ async function cargarOperaciones(t){
 }
 
 // Resume las operaciones de las últimas 24 h y las pinta como Ani
+function setPanel(cual){
+  S.panel = cual;
+  document.querySelectorAll('#dTabs .tab2').forEach(b =>
+    b.classList.toggle('on', b.dataset.p === cual));
+  if(S.actual) pintarPanel(S.actual);
+}
+
 function pintarPanel(t){
   const cont = $('dPanel');
   if(!cont) return;
@@ -1119,17 +1175,22 @@ function pintarPanel(t){
     cont.innerHTML = '<div class="err-box">No se pudo leer el historial: ' + S.opsError + '</div>';
     return;
   }
-  if(!S.ops){ cont.innerHTML = '<div class="panel-vacio">Leyendo operaciones…</div>'; return; }
+  if(!S.ops){ cont.innerHTML = '<div class="panel-vacio">Leyendo operaciones...</div>'; return; }
+  const cual = S.panel || 'stats';
+  if(cual === 'trades')  return panelOperaciones(t, cont);
+  if(cual === 'holders') return panelPoseedores(t, cont);
+  return panelResumen(t, cont);
+}
 
+function panelResumen(t, cont){
   const corte = S.ops.ultimo - BLOQUES_24H;
   const recientes = S.ops.lista.filter(o => o.bloque >= corte);
   if(!recientes.length){
-    cont.innerHTML = '<div class="panel-vacio">Sin operaciones en las últimas 24 horas.</div>';
+    cont.innerHTML = '<div class="panel-vacio">Sin operaciones en las ultimas 24 horas.</div>';
     return;
   }
-
-  const c = recientes.filter(o=>o.tipo==='compra');
-  const v = recientes.filter(o=>o.tipo==='venta');
+  const c = recientes.filter(o=>o.compra);
+  const v = recientes.filter(o=>!o.compra);
   const volC = c.reduce((a,o)=>a+o.wld,0);
   const volV = v.reduce((a,o)=>a+o.wld,0);
   const compradores = new Set(c.map(o=>lc(o.usuario))).size;
@@ -1139,110 +1200,66 @@ function pintarPanel(t){
     const tot = a + b || 1;
     return `<div class="barra"><i style="width:${(a/tot*100).toFixed(1)}%"></i></div>`;
   };
-  const fila = (et1, n1, et2, n2) => `
+  const fila = (e1,n1,e2,n2) => `
     <div class="pf">
-      <div class="pf-top"><span class="up">${et1}</span><span class="down">${et2}</span></div>
+      <div class="pf-top"><span class="up">${e1}</span><span class="down">${e2}</span></div>
       <div class="pf-num"><b class="up">${n1}</b><b class="down">${n2}</b></div>
     </div>`;
 
   cont.innerHTML = `
-    <div class="panel-tit">Operaciones · últimas 24 h</div>
+    <div class="panel-tit">Ultimas 24 horas</div>
     ${fila('COMPRAS', c.length, 'VENTAS', v.length)}
     ${barra(c.length, v.length)}
-    ${fila('VOL. COMPRA', fmt(volC)+' WLD', 'VOL. VENTA', fmt(volV)+' WLD')}
+    ${fila('VOL. COMPRA', fmt(volC,3)+' WLD', 'VOL. VENTA', fmt(volV,3)+' WLD')}
     ${barra(volC, volV)}
     ${fila('COMPRADORES', compradores, 'VENDEDORES', vendedores)}
-    ${barra(compradores, vendedores)}
-  `;
+    ${barra(compradores, vendedores)}`;
 }
 
-
-/* ------------------------------------------------------------------
-   ACTIVIDAD EN VIVO
-   El plan gratis del RPC solo deja pedir 10 bloques por consulta, pero para
-   un feed EN VIVO eso alcanza: se consultan los ultimos bloques cada pocos
-   segundos y se va acumulando. No sirve para historial viejo, si para lo
-   que esta pasando ahora.
-   ------------------------------------------------------------------ */
-const TOPIC_COMPRA = 'Compra(address,address,uint256,uint256)';
-const TOPIC_VENTA  = 'Venta(address,address,uint256,uint256)';
-const VENTANA_BLOQUES = 9;      // tope del plan gratis
-let _ultimoBloqueVisto = 0;
-
-async function bloqueActual(){
-  const r = await fetch(WORLD_CHAIN_RPC, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]})
-  });
-  const j = await r.json();
-  return j.result ? parseInt(j.result,16) : 0;
-}
-
-async function logsDeRango(desde, hasta){
-  const pedir = async (topic) => {
-    const r = await fetch(WORLD_CHAIN_RPC, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'eth_getLogs', params:[{
-        address: lc(GEK_ROUTER),
-        topics: [ethers.id(topic)],
-        fromBlock: '0x'+desde.toString(16),
-        toBlock:   '0x'+hasta.toString(16)
-      }]})
-    });
-    const j = await r.json();
-    if(j.error) throw new Error(j.error.message||'getLogs');
-    return j.result || [];
-  };
-  const [compras, ventas] = await Promise.all([pedir(TOPIC_COMPRA), pedir(TOPIC_VENTA)]);
-  const dec = ethers.AbiCoder.defaultAbiCoder();
-  const ops = [];
-  for(const l of compras){
-    const [wld, tok] = dec.decode(['uint256','uint256'], l.data);
-    ops.push({ compra:true, usuario:'0x'+l.topics[1].slice(26), curva:'0x'+l.topics[2].slice(26),
-               wld:n18(wld), tok:n18(tok), bloque:parseInt(l.blockNumber,16) });
+function panelOperaciones(t, cont){
+  const ops = S.ops.lista.slice().reverse().slice(0, 40);
+  if(!ops.length){
+    cont.innerHTML = '<div class="panel-vacio">Todavia no hay operaciones.</div>';
+    return;
   }
-  for(const l of ventas){
-    const [tok, wld] = dec.decode(['uint256','uint256'], l.data);
-    ops.push({ compra:false, usuario:'0x'+l.topics[1].slice(26), curva:'0x'+l.topics[2].slice(26),
-               wld:n18(wld), tok:n18(tok), bloque:parseInt(l.blockNumber,16) });
-  }
-  return ops;
+  cont.innerHTML = '<div class="panel-tit">Ultimas operaciones</div>' +
+    ops.map((o,k) => `
+      <div class="op-row">
+        <span class="op-tag ${o.compra?'c':'v'}">${o.compra?'COMPRA':'VENTA'}</span>
+        <span class="quien">${nombreAsync(o.usuario, 'op'+k+'_'+o.bloque)}</span>
+        <span class="cuanto ${o.compra?'up':'down'}">${fmt(o.wld,3)} WLD</span>
+      </div>`).join('');
 }
 
-async function sondearActividad(primeraVez){
-  try{
-    const ahora = await bloqueActual();
-    if(!ahora) return;
-    let desde;
-    if(primeraVez){
-      // al abrir: se barre un poco hacia atras para no arrancar vacio
-      desde = ahora - VENTANA_BLOQUES * 6;
-    } else {
-      desde = _ultimoBloqueVisto ? _ultimoBloqueVisto + 1 : ahora - VENTANA_BLOQUES;
-    }
-    let nuevas = [];
-    for(let d = desde; d <= ahora; d += VENTANA_BLOQUES + 1){
-      const h = Math.min(d + VENTANA_BLOQUES, ahora);
-      nuevas = nuevas.concat(await logsDeRango(d, h));
-    }
-    _ultimoBloqueVisto = ahora;
-    if(nuevas.length){
-      nuevas.sort((a,b)=>b.bloque-a.bloque);
-      S.feed = nuevas.concat(S.feed || []).slice(0, 40);
-      pintarTicker();
-    } else if(primeraVez){
-      pintarTicker();
-    }
-  }catch(e){
-    S.feedError = e.message || String(e);
-    if(primeraVez) pintarTicker();
+// Los poseedores se calculan sumando compras y restando ventas del router.
+// Es exacto para quien opera dentro de la app; una transferencia directa
+// entre wallets no se ve aqui.
+function panelPoseedores(t, cont){
+  const saldos = {};
+  for(const o of S.ops.lista){
+    const k = lc(o.usuario);
+    saldos[k] = (saldos[k] || 0) + (o.compra ? o.tok : -o.tok);
   }
-}
+  const lista = Object.entries(saldos)
+    .filter(([,v]) => v > 0.000001)
+    .sort((a,b) => b[1] - a[1])
+    .slice(0, 30);
 
-function arrancarFeed(){
-  sondearActividad(true);
-  clearInterval(S._feedTimer);
-  S._feedTimer = setInterval(()=>sondearActividad(false), 20000);
+  if(!lista.length){
+    cont.innerHTML = '<div class="panel-vacio">Todavia no hay poseedores.</div>';
+    return;
+  }
+  const total = lista.reduce((a,[,v]) => a + v, 0);
+  cont.innerHTML = `<div class="panel-tit">${lista.length} poseedores</div>` +
+    lista.map(([addr, cant], k) => `
+      <div class="op-row">
+        <span class="hold-pos">#${k+1}</span>
+        <span class="quien">${nombreAsync(addr, 'hd'+k)}</span>
+        <span class="cuanto">${fmt(cant,0)}</span>
+        <span class="cuanto" style="color:var(--dim);min-width:52px;text-align:right">
+          ${(cant/total*100).toFixed(1)}%</span>
+      </div>`).join('') +
+    '<p class="nota" style="margin-top:10px">Calculado con las operaciones hechas en GEK. Una transferencia directa entre wallets no se refleja aqui.</p>';
 }
 
 async function cargarTokens(){
