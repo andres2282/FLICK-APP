@@ -701,7 +701,6 @@ img.ava{object-fit:cover;display:block;
     <div class="ava" id="pAva">F</div>
     <h1 id="pName">Sin conectar</h1>
     <div class="addr" id="pAddr">Conecta tu wallet para ver tu perfil</div>
-    <div class="stars" id="pStars">☆☆☆☆☆</div>
     <div class="badges" id="pBadges"></div>
   </div>
   <div class="sec"><div class="sec-hd"><h2>Panel de creador</h2></div>
@@ -740,7 +739,7 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b33';
+const BUILD = 'GEK b34';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
@@ -1046,6 +1045,17 @@ async function conectarWallet(){
     }
 
     S.conectado = true;
+    // si walletAuth no trajo el nombre, se pregunta aparte
+    if(!S.username){
+      nombreDe(S.wallet).then(n => {
+        if(n){
+          S.username = n;
+          const w = $('wbtn');
+          if(w && w.classList.contains('on')) w.innerHTML = '<span class="dot"></span>@' + n;
+          if(S.vista === 'perfil') pintarPerfil();
+        }
+      });
+    }
     $('splash').classList.add('hidden');
     const w = $('wbtn');
     w.classList.add('on');
@@ -1237,6 +1247,11 @@ async function cargarOperaciones(t){
     _cacheOps[clave] = S.ops;
   }catch(e){
     S.opsError = e.message || String(e);
+    log('historial: ' + S.opsError, true);
+    if(e.parcial && e.parcial.length){
+      const propias = e.parcial.filter(o => lc(o.curva) === clave).sort((a,b)=>a.bloque-b.bloque);
+      if(propias.length) S.ops = { lista: propias, ultimo: 0 };
+    }
   }
   if(S.actual && S.actual.dir === t.dir){ pintarPanel(t); dibujarChart(t); }
 }
@@ -1395,14 +1410,23 @@ async function barrer(desde, hasta, maxPeticiones, avisar){
     tramos.push([d, Math.min(d + VENTANA_BLOQUES - 1, hasta)]);
   }
   if(maxPeticiones && tramos.length > maxPeticiones) tramos.splice(0, tramos.length - maxPeticiones);
-  const EN_PARALELO = 8;
-  let ops = [], hechos = 0;
+  // Menos peticiones a la vez: en paralelo agresivo el RPC empieza a rechazar.
+  const EN_PARALELO = 4;
+  let ops = [], hechos = 0, fallos = 0, primerError = null;
   for(let i = 0; i < tramos.length; i += EN_PARALELO){
     const tanda = tramos.slice(i, i + EN_PARALELO);
-    const res = await Promise.all(tanda.map(([a,b]) => logsDeRango(a,b).catch(()=>[])));
+    const res = await Promise.all(tanda.map(([a,b]) =>
+      logsDeRango(a,b).catch(e => { fallos++; if(!primerError) primerError = e; return []; })));
     res.forEach(r => ops = ops.concat(r));
     hechos += tanda.length;
     if(avisar) avisar(hechos, tramos.length, ops);
+    await new Promise(r => setTimeout(r, 60));   // respiro entre tandas
+  }
+  // si fallo mas de la mitad, el resultado no es de fiar: se avisa
+  if(primerError && fallos > tramos.length / 2){
+    const e = new Error((primerError.message || primerError) + ' (' + fallos + '/' + tramos.length + ' consultas fallaron)');
+    e.parcial = ops;
+    throw e;
   }
   return ops;
 }
@@ -2360,11 +2384,11 @@ function pintarPerfil(){
     return;
   }
   $('pAva').textContent  = (S.username||S.wallet||'F')[0].toUpperCase();
-  $('pName').textContent = S.username ? '@'+S.username : 'Anónimo';
+  $('pName').textContent = S.username ? '@'+S.username : corto(S.wallet);
   $('pAddr').textContent = corto(S.wallet);
   const mios = S.tokens.filter(t => t.creador && lc(t.creador) === lc(S.wallet));
   $('pCreated').textContent = mios.length;
-  $('pStars').textContent = mios.length ? '★☆☆☆☆' : '☆☆☆☆☆';
+
   $('pBadges').innerHTML = (mios.length ? ['🚀 Creador'] : ['🌱 Nuevo por aquí'])
     .map(b=>`<span class="badge">${b}</span>`).join('');
 }
