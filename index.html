@@ -288,6 +288,12 @@ img.ava{object-fit:cover;display:block;
 .pf-label{margin:0;font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
 .pf-total{margin:4px 0 0;font-family:var(--mono);font-size:36px;font-weight:700;letter-spacing:-.02em}
 .pf-sub{margin:5px 0 0;font-size:12px;color:var(--dim)}
+.datos{display:grid;gap:1px;background:var(--line);border:1px solid var(--line);
+  border-radius:10px;overflow:hidden}
+.dato{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:9px 11px;background:var(--panel);font-size:12.5px}
+.dato span{color:var(--dim)}
+.dato b{font-family:var(--mono);text-align:right;word-break:break-all}
 .diag{margin-top:12px;padding:12px;border-radius:10px;background:#0B0F12;
   border:1px solid var(--line);font-family:var(--mono);font-size:10.5px;line-height:1.7;
   white-space:pre-wrap;word-break:break-word;color:var(--dim);user-select:text}
@@ -749,7 +755,7 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b36';
+const BUILD = 'GEK b37';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
@@ -1295,18 +1301,29 @@ function pintarPanel(t){
 }
 
 function panelResumen(t, cont){
+  const ops = S.ops.lista;
   const corte = S.ops.ultimo - BLOQUES_24H;
-  const recientes = S.ops.lista.filter(o => o.bloque >= corte);
-  if(!recientes.length){
-    cont.innerHTML = '<div class="panel-vacio">Sin operaciones en las ultimas 24 horas.</div>';
-    return;
-  }
-  const c = recientes.filter(o=>o.compra);
-  const v = recientes.filter(o=>!o.compra);
+  const hoy = ops.filter(o => o.bloque >= corte);
+  const usar = hoy.length ? hoy : ops;
+  const periodo = hoy.length ? 'ultimas 24 h' : 'desde el lanzamiento';
+
+  const c = usar.filter(o=>o.compra);
+  const v = usar.filter(o=>!o.compra);
   const volC = c.reduce((a,o)=>a+o.wld,0);
   const volV = v.reduce((a,o)=>a+o.wld,0);
   const compradores = new Set(c.map(o=>lc(o.usuario))).size;
   const vendedores  = new Set(v.map(o=>lc(o.usuario))).size;
+
+  // cuantas personas distintas tienen saldo positivo
+  const saldos = {};
+  for(const o of ops){
+    const k = lc(o.usuario);
+    saldos[k] = (saldos[k] || 0) + (o.compra ? o.tok : -o.tok);
+  }
+  const nHolders = Object.values(saldos).filter(x => x > 0.000001).length;
+
+  const dato = (et, val) => `
+    <div class="dato"><span>${et}</span><b>${val}</b></div>`;
 
   const barra = (a,b) => {
     const tot = a + b || 1;
@@ -1318,14 +1335,30 @@ function panelResumen(t, cont){
       <div class="pf-num"><b class="up">${n1}</b><b class="down">${n2}</b></div>
     </div>`;
 
-  cont.innerHTML = prog + `
-    <div class="panel-tit">Ultimas 24 horas</div>
-    ${fila('COMPRAS', c.length, 'VENTAS', v.length)}
-    ${barra(c.length, v.length)}
-    ${fila('VOL. COMPRA', fmt(volC,3)+' WLD', 'VOL. VENTA', fmt(volV,3)+' WLD')}
-    ${barra(volC, volV)}
-    ${fila('COMPRADORES', compradores, 'VENDEDORES', vendedores)}
-    ${barra(compradores, vendedores)}`;
+  cont.innerHTML = `
+    <div class="panel-tit">Ficha del token</div>
+    <div class="datos">
+      ${dato('Suministro total', '1,000,000,000 $' + t.s)}
+      ${dato('En circulacion', fmt(Math.max(0, 1e9 - (t.enCurva||0)), 0) + ' $' + t.s)}
+      ${dato('Poseedores', nHolders)}
+      ${dato('Operaciones', ops.length)}
+      ${dato('Comision creador', (t.comision/100 || 0).toFixed(2) + '%')}
+      ${dato('Comision plataforma', '1%')}
+      ${dato('Recaudado', fmt(t.raised,3) + ' / ' + fmt(t.target||1500,0) + ' WLD')}
+      ${dato('Creador', nombreAsync(t.creador, 'rsCreador'))}
+      ${dato('Contrato', corto(t.dir))}
+    </div>
+    ${t.desc ? `<p class="nota" style="margin-top:10px">${t.desc}</p>` : ''}
+
+    <div class="panel-tit" style="margin-top:16px">Balance &middot; ${periodo}</div>
+    ${usar.length ? `
+      ${fila('COMPRAS', c.length, 'VENTAS', v.length)}
+      ${barra(c.length, v.length)}
+      ${fila('VOL. COMPRA', fmt(volC,3)+' WLD', 'VOL. VENTA', fmt(volV,3)+' WLD')}
+      ${barra(volC, volV)}
+      ${fila('COMPRADORES', compradores, 'VENDEDORES', vendedores)}
+      ${barra(compradores, vendedores)}`
+    : '<div class="panel-vacio">Todavia no hay operaciones.</div>'}`;
 }
 
 function panelOperaciones(t, cont){
@@ -1362,7 +1395,7 @@ function panelPoseedores(t, cont){
     return;
   }
   const total = lista.reduce((a,[,v]) => a + v, 0);
-  cont.innerHTML = `<div class="panel-tit">${lista.length} poseedores</div>` +
+  cont.innerHTML = `<div class="panel-tit">${lista.length} poseedores &middot; ${S.ops.lista.length} operacion(es)</div>` +
     lista.map(([addr, cant], k) => `
       <div class="op-row">
         <span class="hold-pos">#${k+1}</span>
@@ -1918,59 +1951,71 @@ function abrirToken(sym){
 }
 
 function dibujarChart(t){
-  const c = $('chart'), ctx = c.getContext('2d');
-  const w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio||1;
-  c.width = w*dpr; c.height = h*dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.clearRect(0,0,w,h);
+  try{
+    const c = $('chart'); if(!c) return;
+    const ctx = c.getContext('2d');
+    const w = c.clientWidth || c.parentElement.clientWidth || 320;
+    const h = c.clientHeight || 150;
+    const dpr = window.devicePixelRatio || 1;
+    c.width = Math.max(1, Math.round(w*dpr));
+    c.height = Math.max(1, Math.round(h*dpr));
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
 
-  const aviso = (l1, l2) => {
-    ctx.fillStyle = '#7C8C86'; ctx.textAlign = 'center';
-    ctx.font = '13px "Space Grotesk", system-ui, sans-serif';
-    ctx.fillText(l1, w/2, h/2 - 6);
-    if(l2){ ctx.font = '11px "Space Grotesk", system-ui, sans-serif';
-            ctx.fillStyle = '#4C5A55'; ctx.fillText(l2, w/2, h/2 + 14); }
-  };
+    const aviso = (l1, l2) => {
+      ctx.fillStyle = '#7C8C86'; ctx.textAlign = 'center';
+      ctx.font = '13px system-ui, sans-serif';
+      ctx.fillText(l1, w/2, h/2 - 6);
+      if(l2){ ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = '#4C5A55';
+              ctx.fillText(l2, w/2, h/2 + 14); }
+    };
 
-  if(!S.ops){ aviso('Leyendo operaciones…'); return; }
+    if(!S.ops){ aviso('Leyendo operaciones...'); return; }
 
-  // precio real de cada operación = WLD movido / tokens movidos
-  const pts = S.ops.lista
-    .filter(o => o.tok > 0)
-    .map(o => ({ p: o.wld / o.tok, compra: o.tipo === 'compra' }));
+    // Cada operacion da un precio real: WLD movido / tokens movidos.
+    // Se antepone el precio de lanzamiento para que siempre haya linea.
+    const pts = [];
+    if(_precioLanzamiento) pts.push({ p: _precioLanzamiento, compra: true, inicio: true });
+    for(const o of S.ops.lista){
+      if(o.tok > 0 && o.wld > 0) pts.push({ p: o.wld / o.tok, compra: o.compra });
+    }
+    if(pts.length < 2){
+      aviso('Sin operaciones todavia', 'La curva arranca con la primera compra');
+      return;
+    }
 
-  if(pts.length < 2){
-    aviso('Sin operaciones todavía', 'La curva arranca con la primera compra');
-    return;
+    const vals = pts.map(o => o.p);
+    let min = Math.min(...vals), max = Math.max(...vals);
+    if(max === min){ max = min * 1.02; min = min * 0.98; }
+    const r = (max - min) || 1;
+    const x = i => (i/(pts.length-1))*w;
+    const y = p => h - 14 - ((p - min)/r)*(h - 30);
+    const sube = vals[vals.length-1] >= vals[0];
+    const col = sube ? '#C6FF3D' : '#FF4D6A';
+
+    const g = ctx.createLinearGradient(0,0,0,h);
+    g.addColorStop(0, sube ? 'rgba(198,255,61,.30)' : 'rgba(255,77,106,.28)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.beginPath(); ctx.moveTo(0,h);
+    pts.forEach((o,i)=>ctx.lineTo(x(i), y(o.p)));
+    ctx.lineTo(w,h); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+
+    ctx.beginPath();
+    pts.forEach((o,i)=> i ? ctx.lineTo(x(i), y(o.p)) : ctx.moveTo(x(i), y(o.p)));
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+
+    pts.forEach((o,i)=>{
+      if(o.inicio) return;
+      ctx.beginPath(); ctx.arc(x(i), y(o.p), 3, 0, 7);
+      ctx.fillStyle = o.compra ? '#C6FF3D' : '#FF4D6A'; ctx.fill();
+    });
+
+    ctx.fillStyle = '#4C5A55'; ctx.textAlign = 'left';
+    ctx.font = '10px monospace';
+    ctx.fillText((pts.length-1) + ' operaciones', 8, 14);
+  }catch(e){
+    log('grafico: ' + (e.message||e), true);
   }
-
-  const vals = pts.map(o => o.p);
-  const min = Math.min(...vals), max = Math.max(...vals), r = (max - min) || max || 1;
-  const x = i => (i/(pts.length-1))*w;
-  const y = p => h - 12 - ((p - min)/r)*(h - 26);
-  const sube = vals[vals.length-1] >= vals[0];
-  const col = sube ? '#C6FF3D' : '#FF4D6A';
-
-  const g = ctx.createLinearGradient(0,0,0,h);
-  g.addColorStop(0, sube ? 'rgba(198,255,61,.28)' : 'rgba(255,77,106,.26)');
-  g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.beginPath(); ctx.moveTo(0,h);
-  pts.forEach((o,i)=>ctx.lineTo(x(i), y(o.p)));
-  ctx.lineTo(w,h); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
-
-  ctx.beginPath();
-  pts.forEach((o,i)=> i ? ctx.lineTo(x(i), y(o.p)) : ctx.moveTo(x(i), y(o.p)));
-  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
-
-  // un punto por operación: verde compra, rojo venta
-  pts.forEach((o,i)=>{
-    ctx.beginPath(); ctx.arc(x(i), y(o.p), 2.5, 0, 7);
-    ctx.fillStyle = o.compra ? '#C6FF3D' : '#FF4D6A'; ctx.fill();
-  });
-
-  ctx.fillStyle = '#4C5A55'; ctx.textAlign = 'left';
-  ctx.font = '10px "JetBrains Mono", monospace';
-  ctx.fillText(pts.length + ' operaciones', 8, 14);
 }
 function setLado(l){
   S.lado = l;
