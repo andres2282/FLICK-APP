@@ -302,32 +302,7 @@ img.ava{object-fit:cover;display:block;
   font-family:var(--mono);color:#FFB4B4;background:rgba(255,77,106,.09);
   border:1px solid rgba(255,77,106,.3);word-break:break-word;user-select:text}
 
-/* ---------- aviso sin auditoría ---------- */
-.tabs2{display:flex;gap:6px;margin:0 14px 8px}
-.tab2{flex:1;padding:9px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);
-  font-size:12.5px;font-weight:700;color:var(--dim)}
-.tab2.on{background:var(--lime);border-color:var(--lime);color:#08110A}
-.op-row{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--line)}
-.op-row:last-child{border-bottom:0}
-.op-row .quien{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.op-row .cuanto{font-family:var(--mono);font-size:12.5px;font-weight:700}
-.op-tag{font-size:9.5px;font-weight:700;letter-spacing:.08em;padding:3px 7px;border-radius:6px}
-.op-tag.c{color:var(--lime);background:rgba(198,255,61,.12)}
-.op-tag.v{color:var(--red);background:rgba(255,77,106,.12)}
-.hold-pos{width:22px;font-family:var(--mono);font-size:11px;color:var(--dim);flex:none}
-.panel{margin:0 14px 4px;padding:13px;border-radius:13px;
-  background:var(--panel);border:1px solid var(--line)}
-.panel-tit{font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;
-  margin-bottom:11px}
-.panel-vacio{font-size:12.5px;color:var(--dim);text-align:center;padding:8px 0}
-.pf{margin-top:9px}
-.pf-top{display:flex;justify-content:space-between;font-size:9.5px;letter-spacing:.1em;font-weight:700}
-.pf-num{display:flex;justify-content:space-between;font-family:var(--mono);font-size:14px;margin-top:2px}
-.barra{display:flex;height:5px;border-radius:3px;overflow:hidden;background:var(--red);margin-top:5px}
-.barra i{background:var(--lime);display:block}
-.nota{margin:12px 0 0;font-size:11.5px;line-height:1.55;color:#6B7A75}
-.warn{margin:14px;padding:12px;border-radius:11px;font-size:12.5px;color:#FFD9A0;
-  background:rgba(255,170,60,.08);border:1px solid rgba(255,170,60,.28)}
+
 
 /* ---------- perfil ---------- */
 .prof{padding:20px 14px;text-align:center}
@@ -732,7 +707,7 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b30';
+const BUILD = 'GEK b31 diag';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
@@ -765,17 +740,28 @@ async function elegirRPC(){
       return url;
     } finally { clearTimeout(t); }
   };
+  log('probando ' + RPCS.length + ' RPC…');
   const errores = [];
   const intentos = RPCS.map(u => prueba(u).catch(e => {
     errores.push(u.split('/')[2] + ': ' + (e.message||e));
     throw e;
   }));
   try{
-    WORLD_CHAIN_RPC = await Promise.any(intentos);
+    if(typeof Promise.any !== 'function'){
+      // respaldo para webviews que no lo soportan
+      WORLD_CHAIN_RPC = await new Promise((ok, mal) => {
+        let fallos = 0;
+        intentos.forEach(pr => pr.then(ok).catch(()=>{ if(++fallos === intentos.length) mal(); }));
+      });
+    } else {
+      WORLD_CHAIN_RPC = await Promise.any(intentos);
+    }
     S.rpcUsado = WORLD_CHAIN_RPC.split('/')[2];
+    log('RPC activo: ' + S.rpcUsado);
     return true;
   }catch(e){
     S.rpcError = 'Ningun RPC respondio. ' + errores.join(' | ');
+    log(S.rpcError, true);
     return false;
   }
 }
@@ -856,6 +842,7 @@ const SLIPPAGE = 0.01;
 /* ==================================================================
    ESTADO
    ================================================================== */
+let S_LOG = [];
 const S = {
   vista:'explorar', wallet:'', username:'', conectado:false,
   tokens:[], filtro:'nuevos', actual:null, lado:'comprar',
@@ -868,6 +855,19 @@ const S = {
    UTILIDADES
    ================================================================== */
 const $ = id => document.getElementById(id);
+
+// Registro visible: en World App no se puede abrir la consola, asi que cada
+// paso del arranque se escribe en la propia pantalla de carga.
+function log(msg, malo){
+  S_LOG.push({ msg: String(msg).slice(0,180), malo: !!malo, t: Date.now() });
+  const el = document.getElementById('bootLog');
+  if(el) el.innerHTML = S_LOG.map(l =>
+    `<div style="color:${l.malo?'#FFB4B4':'#6B7A75'}">${l.malo?'✗':'·'} ${l.msg}</div>`).join('');
+}
+// cualquier error de JavaScript acaba aqui, no en una consola que nadie ve
+window.addEventListener('error', e => log('JS: ' + (e.message||e), true));
+window.addEventListener('unhandledrejection', e =>
+  log('promesa: ' + ((e.reason && e.reason.message) || e.reason), true));
 const lc = a => String(a).toLowerCase();
 // El teclado en español escribe la coma como separador decimal, y parseFloat
 // devuelve 0 con ella. Cualquier monto que escriba el usuario pasa por aquí.
@@ -1324,14 +1324,16 @@ async function cargarTokens(){
   if(DEMO){ S.tokens = EJEMPLO.slice(); return; }
   S.cargando = true;
   try{ await _cargarTokens(); }
-  catch(e){ S.rpcError = e.message || String(e); S.tokens = S.tokens || []; }
+  catch(e){ S.rpcError = e.message || String(e); log('cargarTokens: ' + S.rpcError, true); S.tokens = S.tokens || []; }
   finally{ S.cargando = false; }
 }
 
 async function _cargarTokens(){
 
+  log('leyendo la factory…');
   const tot = await leer(GEK_FACTORY, 'totalTokens', [], ['uint256']);
   const n = tot ? Number(tot[0]) : 0;
+  log('tokens en la factory: ' + n + (tot ? '' : ' (sin respuesta)'), !tot);
   if(!n){ S.tokens = []; return; }
 
   // Los más recientes primero, hasta 30 para no castigar el RPC.
@@ -1388,6 +1390,7 @@ async function _cargarTokens(){
   }));
 
   S.tokens = tokens.filter(Boolean);
+  log('tokens leidos: ' + S.tokens.length);
 }
 
 // Avatar: la imagen real si existe, si no la inicial del símbolo
@@ -1537,7 +1540,12 @@ function pintarLista(){
   }
   if(S.cargando){
     $('lista').innerHTML = `<div class="empty"><div class="spin"></div>
-      <p style="margin-top:14px">Leyendo la cadena…</p></div>`;
+      <p style="margin-top:14px">Leyendo la cadena…</p>
+      <div id="bootLog" style="margin-top:14px;text-align:left;font-family:var(--mono);
+        font-size:10.5px;line-height:1.6;max-height:230px;overflow:auto"></div></div>`;
+    const el = $('bootLog');
+    if(el) el.innerHTML = S_LOG.map(l =>
+      `<div style="color:${l.malo?'#FFB4B4':'#6B7A75'}">${l.malo?'✗':'·'} ${l.msg}</div>`).join('');
     return;
   }
   if(!l.length){
@@ -2253,9 +2261,11 @@ function renderTodo(){
 }
 (async function init(){
   renderTodo();              // muestra el spinner de inmediato
+  log('arranque ' + BUILD);
   await elegirRPC();         // primero, un RPC que de verdad responda
   arrancarFeed();            // actividad en vivo, en paralelo
   await cargarTokens();
+  log('listo');
   renderTodo();
   window.addEventListener('resize', ()=>{ if(S.actual && S.vista==='token') dibujarChart(S.actual); });
 })();
