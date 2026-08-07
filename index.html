@@ -288,6 +288,27 @@ img.ava{object-fit:cover;display:block;
 .pf-label{margin:0;font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
 .pf-total{margin:4px 0 0;font-family:var(--mono);font-size:36px;font-weight:700;letter-spacing:-.02em}
 .pf-sub{margin:5px 0 0;font-size:12px;color:var(--dim)}
+.acciones{display:flex;gap:9px;margin-top:18px}
+.acciones button{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;
+  padding:12px 6px;border-radius:12px;background:var(--panel);border:1px solid var(--line);
+  font-size:11.5px;font-weight:700;color:var(--text)}
+.acciones button span{font-size:17px}
+.hoja{position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.6);display:flex;
+  align-items:flex-end;backdrop-filter:blur(3px)}
+.hoja-in{width:100%;max-width:520px;margin:0 auto;padding:10px 18px
+  calc(24px + env(safe-area-inset-bottom));background:#0C1114;
+  border-radius:20px 20px 0 0;border-top:1px solid var(--line);
+  max-height:88vh;overflow-y:auto}
+.hoja-bar{width:38px;height:4px;border-radius:3px;background:var(--line);margin:0 auto 14px}
+.hoja-in h3{margin:0 0 6px;font-family:var(--display);font-size:19px;letter-spacing:.04em}
+.hoja-p{margin:0 0 14px;font-size:12.5px;color:var(--dim);line-height:1.55}
+.addr-box{padding:14px;border-radius:11px;background:var(--panel);border:1px solid var(--line);
+  font-family:var(--mono);font-size:13px;word-break:break-all;line-height:1.6;
+  margin-bottom:12px;user-select:text;text-align:center}
+.hoja-x{width:100%;margin-top:12px;padding:12px;font-size:13px;color:var(--dim);font-weight:700}
+.links{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+.link-chip{padding:6px 13px;border-radius:999px;background:var(--panel-2);
+  border:1px solid var(--line);font-size:12px;font-weight:700;color:var(--lime)}
 .datos{display:grid;gap:1px;background:var(--line);border:1px solid var(--line);
   border-radius:10px;overflow:hidden}
 .dato{display:flex;justify-content:space-between;align-items:center;gap:10px;
@@ -536,6 +557,7 @@ img.ava{object-fit:cover;display:block;
     </div>
     <p class="dt-desc hidden" id="dDesc"></p>
     <p class="dt-fee hidden" id="dFee"></p>
+    <div class="links hidden" id="dLinks"></div>
   </div>
   <div class="chart"><canvas id="chart"></canvas></div>
   <div class="grid2">
@@ -576,6 +598,12 @@ img.ava{object-fit:cover;display:block;
     <div class="fld">
       <label>Descripción</label>
       <textarea id="eDesc" maxlength="280" placeholder="¿De qué se trata tu token?"></textarea>
+    </div>
+    <div class="fld">
+      <label>Enlaces</label>
+      <input id="eTg" placeholder="Telegram: t.me/tucanal" style="margin-bottom:7px">
+      <input id="eX"  placeholder="X: x.com/tucuenta" style="margin-bottom:7px">
+      <input id="eWeb" placeholder="Web: tusitio.com">
     </div>
     <div class="fld">
       <label>Imagen</label>
@@ -634,6 +662,14 @@ img.ava{object-fit:cover;display:block;
     <div class="fld">
       <label>Descripción</label>
       <textarea id="cDesc" maxlength="280" placeholder="¿De qué se trata tu token?"></textarea>
+    </div>
+
+    <div class="fld">
+      <label>Enlaces (opcional)</label>
+      <input id="cTg" placeholder="Telegram: t.me/tucanal" style="margin-bottom:7px">
+      <input id="cX"  placeholder="X: x.com/tucuenta" style="margin-bottom:7px">
+      <input id="cWeb" placeholder="Web: tusitio.com">
+      <div class="hint">Aparecen en la página de tu token para que la gente te encuentre.</div>
     </div>
 
     <div class="fld">
@@ -703,6 +739,48 @@ img.ava{object-fit:cover;display:block;
     <p class="pf-label">Valor total</p>
     <h1 class="pf-total" id="pnlTotal">—</h1>
     <p class="pf-sub" id="pnlSub"></p>
+    <div class="acciones">
+      <button onclick="abrirEnviar()"><span>&#8599;</span>Enviar</button>
+      <button onclick="abrirRecibir()"><span>&#8600;</span>Recibir</button>
+      <button onclick="ir('explorar')"><span>&#128269;</span>Explorar</button>
+    </div>
+  </div>
+
+  <div class="hoja hidden" id="hojaRecibir">
+    <div class="hoja-in">
+      <div class="hoja-bar"></div>
+      <h3>Recibir</h3>
+      <p class="hoja-p">Esta es tu dirección en World Chain. Solo envía tokens de
+        World Chain aquí; desde otra red se pierden.</p>
+      <div class="addr-box" id="miAddr"></div>
+      <button class="cta" onclick="copiarAddr()">Copiar dirección</button>
+      <button class="hoja-x" onclick="cerrarHojas()">Cerrar</button>
+    </div>
+  </div>
+
+  <div class="hoja hidden" id="hojaEnviar">
+    <div class="hoja-in">
+      <div class="hoja-bar"></div>
+      <h3>Enviar WLD</h3>
+      <div class="fld">
+        <label>Para</label>
+        <input id="envA" placeholder="0x… dirección de World Chain">
+      </div>
+      <div class="fld">
+        <label>Cuánto</label>
+        <div class="amt" style="margin-bottom:0">
+          <input id="envM" type="text" inputmode="decimal" placeholder="0.0"
+                 oninput="this.value=this.value.replace(',','.')">
+          <span class="u">WLD</span>
+        </div>
+        <div class="hint" id="envSaldo"></div>
+      </div>
+      <button class="cta" id="envBtn" onclick="enviarWld()">Enviar</button>
+      <p class="nota">Por ahora solo WLD. Los tokens creados en GEK no se pueden
+        enviar desde aquí: World App solo permite llamar contratos registrados de
+        antemano, y cada token nace con dirección nueva.</p>
+      <button class="hoja-x" onclick="cerrarHojas()">Cerrar</button>
+    </div>
   </div>
   <div id="holdings" class="sec" style="padding-top:0"></div>
 </main>
@@ -755,7 +833,7 @@ img.ava{object-fit:cover;display:block;
    ================================================================== */
 // Marca de versión: sirve para saber de un vistazo si Vercel ya sirve el
 // archivo nuevo. Se muestra al pie del Perfil.
-const BUILD = 'GEK b38';
+const BUILD = 'GEK b41';
 
 // RPC con clave propia: el público limita eth_getLogs a 100 bloques, y sin eso
 // no se puede leer el historial de operaciones. La clave queda visible en este
@@ -778,45 +856,37 @@ let   _rpcFallos = 0;
 
 // Prueba todos y se queda con el primero que responda un numero de bloque.
 async function elegirRPC(){
-  const prueba = async (url) => {
-    const ctrl = new AbortController();
-    const t = setTimeout(()=>ctrl.abort(), 6000);
+  // En orden de preferencia, no el mas rapido: algunos RPC responden rapido
+  // pero devuelven datos incompletos en eth_call.
+  log('probando ' + RPCS.length + ' RPC...');
+  const errores = [];
+  for(const url of RPCS){
     try{
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), 5000);
       const r = await fetch(url, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]}),
+        body: JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{
+          to: lc(GEK_FACTORY),
+          data: ethers.id('totalTokensCreated()').slice(0,10)
+        },'latest']}),
         signal: ctrl.signal
       });
+      clearTimeout(t);
       const j = await r.json();
-      if(!j.result) throw new Error((j.error && j.error.message) || 'sin resultado');
-      return url;
-    } finally { clearTimeout(t); }
-  };
-  log('probando ' + RPCS.length + ' RPC…');
-  const errores = [];
-  const intentos = RPCS.map(u => prueba(u).catch(e => {
-    errores.push(u.split('/')[2] + ': ' + (e.message||e));
-    throw e;
-  }));
-  try{
-    if(typeof Promise.any !== 'function'){
-      // respaldo para webviews que no lo soportan
-      WORLD_CHAIN_RPC = await new Promise((ok, mal) => {
-        let fallos = 0;
-        intentos.forEach(pr => pr.then(ok).catch(()=>{ if(++fallos === intentos.length) mal(); }));
-      });
-    } else {
-      WORLD_CHAIN_RPC = await Promise.any(intentos);
-    }
-    S.rpcUsado = WORLD_CHAIN_RPC.split('/')[2];
-    log('RPC activo: ' + S.rpcUsado);
-    return true;
-  }catch(e){
-    S.rpcError = 'Ningun RPC respondio. ' + errores.join(' | ');
-    log(S.rpcError, true);
-    return false;
+      // tiene que devolver un dato util, no solo responder
+      if(!j.result || j.result === '0x') throw new Error((j.error&&j.error.message)||'sin datos');
+      WORLD_CHAIN_RPC = url;
+      S.rpcUsado = url.split('/')[2];
+      log('RPC activo: ' + S.rpcUsado);
+      return true;
+    }catch(e){ errores.push(url.split('/')[2] + ': ' + (e.message||e)); }
   }
+  S.rpcError = 'Ningun RPC respondio. ' + errores.join(' | ');
+  log(S.rpcError, true);
+  return false;
 }
+
 const CHAIN_ID          = 480;
 const WLD_TOKEN_ADDRESS = "0x2cFc85d8E48F8EAB294be644d9E25C3030863003";
 
@@ -833,7 +903,10 @@ const GEK_ROUTER   = "0x4a7CbBD43fea663dEE20AA6069a13eFDE7efC5Cf";
 const GEK_LOCK     = "0xf10fCE397A2B446F1Abcb343fEeb10e62fd87464";
 // Bloque en que se desplegó el router: desde ahí existe el historial
 const ROUTER_BLOQUE_0 = 33064830;
-const BLOQUES_24H = 43200;   // World Chain hace un bloque cada ~2 s
+const BLOQUES_24H = 43200;
+// Cuanta historia se lee de golpe. 263.000 bloques serian ~600 consultas y el
+// RPC corta; con 45.000 (unas 25 h) alcanza y va rapido. Lo viejo queda en cache.
+const HISTORIA_MAX = 45000;   // World Chain hace un bloque cada ~2 s
 const MAX_IMG_BYTES = 24000;
 
 // App ID real de GEK Launchpad en el Developer Portal de World.
@@ -864,6 +937,8 @@ const FN = {
   saldoDe:      { sig:'balanceOf(address)',           types:['address'] },
   bloqueadoDeUsuario: { sig:'bloqueadoDe(address,address)', types:['address','address'] },
   reclamable:   { sig:'reclamableDe(address,address)', types:['address','address'] },
+  reclamarTodo: { sig:'reclamarTodo(address)',        types:['address'] },
+  transferir:   { sig:'transfer(address,uint256)',    types:['address','uint256'] },
   // FlickBondingCurve
   // Comprar y vender pasan por el router: la curva tiene dirección nueva en
   // cada token y World App solo deja llamar contratos registrados de antemano.
@@ -923,6 +998,29 @@ window.addEventListener('unhandledrejection', e =>
 const lc = a => String(a).toLowerCase();
 // El teclado en español escribe la coma como separador decimal, y parseFloat
 // devuelve 0 con ella. Cualquier monto que escriba el usuario pasa por aquí.
+// El contrato guarda una sola cadena de descripcion. Para no desplegar otro
+// contrato, los enlaces viajan ahi como JSON compacto. Si el texto no es JSON,
+// se trata como descripcion suelta (compatible con lo ya guardado).
+function empacarDesc(texto, tg, x, web){
+  if(!tg && !x && !web) return texto || '';
+  const o = { d: texto || '' };
+  if(tg)  o.tg = tg;
+  if(x)   o.x  = x;
+  if(web) o.w  = web;
+  return JSON.stringify(o);
+}
+function desempacarDesc(cadena){
+  if(!cadena) return { d:'', tg:'', x:'', w:'' };
+  if(cadena[0] === '{'){
+    try{
+      const o = JSON.parse(cadena);
+      if(o && typeof o === 'object') return { d:o.d||'', tg:o.tg||'', x:o.x||'', w:o.w||'' };
+    }catch(e){}
+  }
+  return { d: cadena, tg:'', x:'', w:'' };
+}
+const abrirEnlace = u => { try{ window.open(u, '_blank'); }catch(e){} };
+
 const num = v => parseFloat(String(v == null ? '' : v).replace(/\s/g,'').replace(',', '.')) || 0;
 const corto = a => a ? a.slice(0,6)+'…'+a.slice(-4) : '';
 
@@ -1275,7 +1373,9 @@ async function cargarOperaciones(t){
     const ultimo = parseInt((await rpcFetch({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]})).result, 16);
 
     // 2) solo se leen los bloques nuevos desde la ultima vez
-    const desde = guardado && guardado.ultimo ? guardado.ultimo + 1 : ROUTER_BLOQUE_0;
+    const desde = guardado && guardado.ultimo
+      ? guardado.ultimo + 1
+      : Math.max(ROUTER_BLOQUE_0, ultimo - HISTORIA_MAX);
     if(desde > ultimo){ cargarHolders(t); return; }
 
     const todas = await barrer(desde, ultimo, 400, (hechos, total, parcial) => {
@@ -1379,7 +1479,7 @@ function panelResumen(t, cont){
       ${dato('Creador', nombreAsync(t.creador, 'rsCreador'))}
       ${dato('Contrato', corto(t.dir))}
     </div>
-    ${t.desc ? `<p class="nota" style="margin-top:10px">${t.desc}</p>` : ''}
+    ${desempacarDesc(t.desc).d ? `<p class="nota" style="margin-top:10px">${desempacarDesc(t.desc).d}</p>` : ''}
 
     <div class="panel-tit" style="margin-top:16px">Balance &middot; ${periodo}</div>
     ${usar.length ? `
@@ -1545,7 +1645,7 @@ async function barrer(desde, hasta, maxPeticiones, avisar){
   }
   if(maxPeticiones && tramos.length > maxPeticiones) tramos.splice(0, tramos.length - maxPeticiones);
   // Menos peticiones a la vez: en paralelo agresivo el RPC empieza a rechazar.
-  const EN_PARALELO = 12;
+  const EN_PARALELO = 6;
   let ops = [], hechos = 0, fallos = 0, primerError = null;
   for(let i = 0; i < tramos.length; i += EN_PARALELO){
     const tanda = tramos.slice(i, i + EN_PARALELO);
@@ -1569,9 +1669,9 @@ async function sondearActividad(primeraVez){
     const ahora = await bloqueActual();
     if(!ahora) return;
     let desde = primeraVez
-      ? ahora - VENTANA_BLOQUES * 4
+      ? ahora - VENTANA_BLOQUES * 3
       : (_ultimoBloqueVisto ? _ultimoBloqueVisto + 1 : ahora - VENTANA_BLOQUES);
-    let nuevas = await barrer(desde, ahora, 6);
+    let nuevas = await barrer(desde, ahora, 4);
     _ultimoBloqueVisto = ahora;
     if(nuevas.length){
       nuevas.sort((a,b)=>b.bloque-a.bloque);
@@ -1728,8 +1828,8 @@ async function _cargarTokens(){
       const tieneImg = md && md[2] && md[2] !== '0x';
 
       return {
-        n: nom ? nom[0] : 'Token',
-        s: sim ? sim[0] : '???',
+        n: nom ? nom[0] : null,
+        s: sim ? sim[0] : null,
         dir: dirToken, curva,
         creador: cre ? cre[0] : '',
         p: precio,
@@ -1746,7 +1846,8 @@ async function _cargarTokens(){
     }catch(e){ console.error('token '+i, e); return null; }
   }));
 
-  S.tokens = tokens.filter(Boolean);
+  // un token sin nombre es una lectura fallida, no se muestra a medias
+  S.tokens = tokens.filter(t => t && t.n && t.s);
   log('tokens leidos: ' + S.tokens.length);
 }
 
@@ -1761,6 +1862,7 @@ function avatar(t, clase){
    RENDER
    ================================================================== */
 function ir(v){
+  cerrarHojas();
   S.vista = v;
   ['explorar','token','crear','portafolio','perfil'].forEach(x=>{
     const el = $('v-'+x); if(el) el.classList.toggle('hidden', x!==v);
@@ -1919,7 +2021,7 @@ function pintarLista(){
         ${avatar(t)}
         <div class="tk-id">
           <h3>${t.n}</h3>
-          <div class="sub">$${t.s}${t.desc ? ' · '+t.desc.slice(0,40) : ''}</div>
+          <div class="sub">$${t.s}${t.desc ? ' · '+desempacarDesc(t.desc).d.slice(0,40) : ''}</div>
         </div>
         <div class="tk-pr">
           <div class="p">${t.p.toFixed(6)}</div>
@@ -1947,9 +2049,20 @@ function abrirToken(sym){
   if(av){ av.style.width = av.style.height = '76px'; av.style.borderRadius = '50%'; }
   $('dName').textContent = t.n;
   $('dSym').textContent = '$'+t.s;
+  const info = desempacarDesc(t.desc);
   const d = $('dDesc');
-  d.textContent = t.desc || '';
-  d.classList.toggle('hidden', !t.desc);
+  d.textContent = info.d || '';
+  d.classList.toggle('hidden', !info.d);
+  const ln = $('dLinks');
+  const enlaces = [];
+  if(info.tg) enlaces.push(['Telegram', info.tg]);
+  if(info.x)  enlaces.push(['X', info.x]);
+  if(info.w)  enlaces.push(['Web', info.w]);
+  ln.innerHTML = enlaces.map(([et,u]) => {
+    const url = /^https?:/.test(u) ? u : 'https://' + u;
+    return `<button class="link-chip" onclick="abrirEnlace('${url}')">${et}</button>`;
+  }).join('');
+  ln.classList.toggle('hidden', !enlaces.length);
   // La comisión se muestra ANTES de comprar, no escondida en la letra chica.
   const cm = $('dFee');
   if(t.comision){
@@ -2244,7 +2357,9 @@ function abrirEditor(){
   const t = S.actual; if(!t) return;
   S.imgFile = null; S.imgBytes = null; S.imgMime = null; S.imgZoom = 1;
   $('eZoomRow').classList.add('hidden');
-  $('eDesc').value = t.desc || '';
+  const _i = desempacarDesc(t.desc);
+  $('eDesc').value = _i.d;
+  $('eTg').value = _i.tg; $('eX').value = _i.x; $('eWeb').value = _i.w;
   $('eImgPrev').innerHTML = t.img ? `<img src="${t.img}" alt="">` : '🖼️';
   $('eImgTxt').textContent = t.img ? 'Cambiar imagen' : 'Elegir de la galería';
   $('dEditor').classList.remove('hidden');
@@ -2314,7 +2429,8 @@ async function prepararMetadatos(dirToken, desc, gasDisponible){
 async function guardarMeta(){
   const t = S.actual; if(!t) return;
   if(!S.conectado) return conectarWallet();
-  const desc = $('eDesc').value.trim();
+  const desc = empacarDesc($('eDesc').value.trim(), $('eTg').value.trim(),
+                          $('eX').value.trim(), $('eWeb').value.trim());
   if(!desc && !S.imgFile){ toast('Pon una descripción o una imagen'); return; }
 
   const btn = $('eGuardar'); btn.disabled = true; btn.textContent = 'Midiendo…';
@@ -2390,7 +2506,8 @@ function actualizarBloqueo(){
 async function crearToken(){
   if(!S.conectado){ return conectarWallet(); }
   const n = $('cName').value.trim(), s = $('cSym').value.trim();
-  const desc = $('cDesc').value.trim();
+  const desc = empacarDesc($('cDesc').value.trim(), $('cTg').value.trim(),
+                          $('cX').value.trim(), $('cWeb').value.trim());
   if(n.length < 2){ toast('Escribe un nombre'); return; }
   if(s.length < 2){ toast('Escribe un símbolo'); return; }
 
@@ -2461,6 +2578,7 @@ async function crearToken(){
 
     // limpiar el formulario
     $('cName').value = $('cSym').value = $('cDesc').value = $('cBuy').value = '';
+    $('cTg').value = $('cX').value = $('cWeb').value = '';
     $('cLockFld').classList.add('hidden');
     $('cImgPrev').innerHTML = '🖼️'; $('cImgTxt').textContent = 'Elegir de la galería';
     $('cZoomRow').classList.add('hidden'); S.imgZoom = 1;
@@ -2508,6 +2626,78 @@ async function tokensExternos(){
   }catch(e){ return []; }
 }
 
+// Reclama todos los lotes ya vencidos de un token
+/* ---------- wallet: recibir y enviar ---------- */
+function cerrarHojas(){
+  $('hojaRecibir').classList.add('hidden');
+  $('hojaEnviar').classList.add('hidden');
+}
+function abrirRecibir(){
+  if(!S.conectado) return conectarWallet();
+  $('miAddr').textContent = S.wallet;
+  $('hojaRecibir').classList.remove('hidden');
+}
+async function copiarAddr(){
+  try{
+    await navigator.clipboard.writeText(S.wallet);
+    toast('Direccion copiada');
+  }catch(e){
+    // en algunos webview no hay portapapeles: se selecciona para copiar a mano
+    const el = $('miAddr');
+    const r = document.createRange(); r.selectNodeContents(el);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    toast('Manten pulsado sobre la direccion para copiar', 5000);
+  }
+}
+function abrirEnviar(){
+  if(!S.conectado) return conectarWallet();
+  $('envA').value = ''; $('envM').value = '';
+  $('envSaldo').textContent = S.saldoWld != null
+    ? 'Tienes ' + fmt(S.saldoWld, 4) + ' WLD' : '';
+  $('hojaEnviar').classList.remove('hidden');
+  // refrescar el saldo por si cambio
+  leer(WLD_TOKEN_ADDRESS, 'saldoDe', [S.wallet], ['uint256']).then(r => {
+    if(r){ S.saldoWld = n18(r[0]);
+           $('envSaldo').textContent = 'Tienes ' + fmt(S.saldoWld,4) + ' WLD'; }
+  });
+}
+
+async function enviarWld(){
+  const para = $('envA').value.trim();
+  const monto = num($('envM').value);
+  if(!/^0x[0-9a-fA-F]{40}$/.test(para)){ toast('Esa direccion no es valida'); return; }
+  if(lc(para) === lc(S.wallet)){ toast('Esa es tu propia direccion'); return; }
+  if(monto <= 0){ toast('Escribe cuanto quieres enviar'); return; }
+  if(S.saldoWld != null && monto > S.saldoWld){ toast('No tienes tanto WLD'); return; }
+
+  const btn = $('envBtn'); btn.disabled = true; btn.textContent = 'Enviando...';
+  try{
+    const wei = ethers.parseUnits(String(monto), 18);
+    const ok = await enviarTx([{ to: lc(WLD_TOKEN_ADDRESS),
+      data: encodeCall(FN.transferir.sig, FN.transferir.types, [para, wei]) }]);
+    if(ok){
+      toast('Enviados ' + fmt(monto,4) + ' WLD');
+      cerrarHojas();
+      pintarPortafolio();
+    } else {
+      toast('No se pudo enviar: ' + (S.ultimoError||'').slice(0,60), 6000);
+    }
+  } finally { btn.disabled = false; btn.textContent = 'Enviar'; }
+}
+
+async function reclamarLote(dirToken, sim){
+  if(!S.conectado) return conectarWallet();
+  toast('Reclamando ' + sim + '...');
+  const ok = await enviarTx([{ to: lc(GEK_LOCK),
+    data: encodeCall(FN.reclamarTodo.sig, FN.reclamarTodo.types, [dirToken]) }]);
+  if(ok){
+    toast('Listo, ya son tuyos');
+    pintarPortafolio();
+  } else {
+    toast('No se pudo reclamar: ' + (S.ultimoError||'').slice(0,60), 6000);
+  }
+}
+
 async function pintarPortafolio(){
   const cont = $('holdings');
   if(!S.conectado){
@@ -2524,13 +2714,15 @@ async function pintarPortafolio(){
   const [wldSaldo, filasGek, externos] = await Promise.all([
     leer(WLD_TOKEN_ADDRESS, 'saldoDe', [S.wallet], ['uint256']),
     Promise.all(S.tokens.map(async t => {
-      const [libre, bloq] = await Promise.all([
+      const [libre, bloq, recl] = await Promise.all([
         leer(t.dir, 'saldoDe', [S.wallet], ['uint256']),
         leer(GEK_LOCK, 'bloqueadoDeUsuario', [S.wallet, t.dir], ['uint256']),
+        leer(GEK_LOCK, 'reclamable', [S.wallet, t.dir], ['uint256']),
       ]);
       const l = libre ? n18(libre[0]) : 0;
       const b = bloq ? n18(bloq[0]) : 0;
-      return { t, libre:l, bloq:b, total:l+b, valor:(l+b)*t.p };
+      const r = recl ? n18(recl[0]) : 0;
+      return { t, libre:l, bloq:b, recl:r, total:l+b, valor:(l+b)*t.p };
     })),
     tokensExternos(),
   ]);
@@ -2587,7 +2779,10 @@ async function pintarPortafolio(){
         </div>
         ${f.bloq > 0 ? `<div class="bloq">&#128274; ${fmt(f.bloq,0)} en custodia`
           + (f.libre > 0 ? ` &middot; ${fmt(f.libre,0)} disponibles` : '') + `</div>` : ''}
-      </button>`).join('');
+      </button>
+      ${f.recl > 0 ? `<button class="cta" style="margin:-4px 0 10px;padding:12px;font-size:14px"
+         onclick="event.stopPropagation(); reclamarLote('${f.t.dir}','${f.t.s}')">
+         Reclamar ${fmt(f.recl,0)} $${f.t.s} ya liberados</button>` : ''}`).join('');
   }
 
   if(otros.length){
